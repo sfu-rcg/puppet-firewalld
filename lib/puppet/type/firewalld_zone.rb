@@ -71,7 +71,7 @@ Puppet::Type.newtype(:firewalld_zone) do
     end
   end 
 
-  newparam(:target) do
+  newproperty(:target) do
     desc <<-EOT
       Can be one of {'ACCEPT', '%%REJECT%%', 'DROP'}.
       Used to accept, reject or drop every packet that 
@@ -81,7 +81,7 @@ Puppet::Type.newtype(:firewalld_zone) do
     newvalues('ACCEPT', '%%REJECT%%', 'DROP')
   end
 
-  newparam(:short) do
+  newproperty(:short) do
       desc "short readable name"
   end
 
@@ -198,6 +198,28 @@ Puppet::Type.newtype(:firewalld_zone) do
               limit       => string, optional
             }
       EOT
+
+      #def insync?(is)
+      #  STDERR.puts "Should is #{@should}"
+      #  return true unless @should
+      #  # an empty array is analogous to no should values
+      #  return true if @should.empty?
+
+      #  def itos(h)
+      #    h.each { |key, value|
+      #      h[key] = itos(value) if value.is_a?(Hash)
+      #      h[key] = value.to_s if value.is_a?(Integer)
+      #    }
+      #  end
+      #  if is.is_a?(Array) and @should.is_a?(Array)
+      #    @should.each { |should_el|
+      #      itos(should_el)
+      #      break unless is.detect { |is_el| is_el == should_el }
+      #    }
+      #  else
+      #    is == @should
+      #  end
+      #end
   end
 
 end
