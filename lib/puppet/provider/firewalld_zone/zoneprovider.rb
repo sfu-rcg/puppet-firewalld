@@ -12,12 +12,12 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
 
   def flush
       Puppet.debug "firewalld zone provider: flushing (#{@resource[:name]})"
-	    write_zonefile
+      write_zonefile
   end
 
   def create
       Puppet.debug "firewalld zone provider: create (#{@resource[:name]})"
-	    write_zonefile
+      write_zonefile
   end
 
   def write_zonefile
@@ -42,19 +42,12 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
 
       if @resource[:interfaces]
         @resource[:interfaces].each do |interface|
-          # TODO: firewall-cmd --get-zone-of-interface...
-          #Puppet.debug "1 doing a pre-get of zone of interface..."
-          #firewall('--zone='+@resource[:name]+' --change-interface='+interface)
-          #firewall('--permanent --zone='+@resource[:name]+' --change-interface='+interface)
-          #zoneofinterfacee = exec_firewall('--get-zone-of-interface',interface)
-          #puts zoneofinterfacee
-          
-          Puppet.debug "should be switching interface to zone..."
           begin
-            zoneofinterface = exec_firewall('--get-zone-of-interface',interface)
+            Puppet.debug "should be switching zone of interface: " + interface
+            zoneofinterface = exec_firewall('--get-zone-of-interface', interface)
             if (zoneofinterface.strip != @resource[:name])
-              exec_firewall('--permanent','--zone',zoneofinterface.strip,'--remove-interface',interface)
-              exec_firewall('--zone',@resource[:name],'--change-interface',interface)
+              exec_firewall('--permanent', '--zone',zoneofinterface.strip, '--remove-interface', interface)
+              exec_firewall('--zone', @resource[:name], '--change-interface', interface)
             end
           rescue Exception => bang
             #puts bang.message
@@ -209,50 +202,22 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
 
       path = '/etc/firewalld/zones/' + @resource[:name] + '.xml'
       file = File.open(path, "w+")
-	    #doc.write( file, 2 )
       fmt = REXML::Formatters::Pretty.new
       fmt.compact = true
       fmt.write(doc, file)
       file.close
       Puppet.debug "firewalld zone provider: Changes to #{path} configuration saved to disk."
-      #firewall('--reload')
-      #Puppet.debug "firewalld zone provider: reloading firewalld configuration"
-     # if @resource[:interfaces]
-     #   @resource[:interfaces].each do |interface|
-     # #    # TODO: firewall-cmd --get-zone-of-interface...
-     #     Puppet.debug "should be switching interface to zone..."
-     #     begin
-     #       zoneofinterface = exec_firewall('--get-zone-of-interface',interface)
-     #       puts zoneofinterface
-     #       #firewall('--permanent --zone='+zoneofinterface.strip+' --remove-interface='+interface)
-     #       if (zoneofinterface.strip != @resource[:name])
-     #         exec_firewall('--permanent','--zone',zoneofinterface.strip,'--remove-interface',interface)
-     #         exec_firewall('--zone',@resource[:name],'--change-interface',interface)
-     #       end
-     #     rescue Exception => bang
-     #       puts bang.message
-     #     end
-
-
-     #     #firewall('--permanent --zone='+@resource[:name]+' --change-interface='+interface)
-
-     #     #firewall('--zone=rcgtrusted --change-interface='+interface)
-     #     #firewall('--permanent --zone=rcgtrusted --change-interface='+interface)
-     # #    #iface = zone.add_element 'interface'
-     # #    #iface.add_attribute('name', interface)
-     #   end
-     # end
+      #Reload is now done from a notify command in the puppet code
   end
 
-  #Added by Adam
+  # Utilized code from crayfishx/puppet-firewalld as the firewall-cmd needs it's arguments properly formatted from this ruby code, and this function does it well, fixes issues that arose from doing firewall('--permanent --zone=foo --remove-interface=lo')
+  # So now use exec_firewall('--permanent', '--zone', zonevar, '--remove-interface', interfacevar)
   def exec_firewall(*extra_args)
       args=[]
-      #args << '--permanent'
       args << extra_args
       args.flatten!
       firewall(args)
   end
-  #End of Added by Adam
 
   def self.instances
     debug "[instances]"
@@ -337,13 +302,11 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
             rule_log = {}
             rule_audit = {}
             rule_action = {}
+            # Changed rule_family to blank to start as it is an optional variable and should be treated as such for consistency
             rule_family = ''
-
-          #Added by Adam
-          #if rule.attributes == 'family'
+            
+            # family is a rule attribute rather than an element and therefore must happen prior to the elements loop
             rule_family = e.attributes["family"].nil? ? nil : e.attributes["family"]
-          #end
-          #End of Added by Adam
 
           e.elements.each do |rule|
             if rule.name == 'source'
@@ -430,9 +393,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
               rule_action['reject_type'] = nil
               rule_action['limit']  = limit
             end
-            #if rule.name == 'family'
-            #  rule_family = rule.attributes["family"].nil? ? nil : rule.attributes["family"]
-            #end
           end
           rich_rules << {
             'source'        => rule_source.empty? ? nil : rule_source,
