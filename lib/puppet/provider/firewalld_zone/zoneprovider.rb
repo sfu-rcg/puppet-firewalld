@@ -11,11 +11,13 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
   mk_resource_methods
 
   def flush
+      p "Flush property_hash is: #{@property_hash}"
       Puppet.debug "firewalld zone provider: flushing (#{@resource[:name]})"
       write_zonefile
   end
 
   def create
+      p "Create property_hash is: #{@property_hash}"
       Puppet.debug "firewalld zone provider: create (#{@resource[:name]})"
       write_zonefile
   end
@@ -26,7 +28,7 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
       zone = doc.add_element 'zone'
       doc << REXML::XMLDecl.new(version='1.0',encoding='utf-8')
 
-      if @resource[:target]
+      if @resource[:target] && ! @resource[:target].empty?
         zone.add_attribute('target', @resource[:target])
       end
 
@@ -250,6 +252,9 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
       target = root.attributes["target"]
       version = root.attributes["version"]
 
+      Puppet.debug("Target is: #{target}")
+
+
       # Loop through the zone elements
       doc.elements.each("zone/*") do |e|
 
@@ -442,6 +447,8 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
         masquerade = ["false"]
       end
 
+      Puppet.debug("Service is: #{service}")
+
       # Add hash to the zone array
       zone << new({
         :name          => zonename,
@@ -459,6 +466,7 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
         :forward_ports => forward_ports.empty? ? nil : forward_ports,
         :rich_rules    => rich_rules.empty? ? nil : rich_rules,
       })
+
     end
     zone
   end
@@ -467,10 +475,14 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
         path = '/etc/firewalld/zones' + @resource[:name] + '.xml'
         File.delete(path)
         Puppet.debug "firewalld zone provider: removing (#{path})"
+        p "Destroy property_hash is: #{@property_hash}"
         @property_hash.clear
     end
 
     def exists?
+        if resource[:target] == nil
+          resource[:target] = ''
+        end
         @property_hash[:ensure] == :present || false
     end
 end
