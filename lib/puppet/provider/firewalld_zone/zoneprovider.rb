@@ -45,7 +45,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
       if @resource[:interfaces]
         @resource[:interfaces].each do |interface|
           begin
-            Puppet.debug "should be switching zone of interface: " + interface
             zoneofinterface = exec_firewall('--get-zone-of-interface', interface)
             if (zoneofinterface.strip != @resource[:name])
               exec_firewall('--permanent', '--zone',zoneofinterface.strip, '--remove-interface', interface)
@@ -72,7 +71,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
         @resource[:services].each do |service|
           srv = zone.add_element 'service'
           srv.add_attribute('name', service)
-          Puppet.debug "firewalld zone provider: adding service (#{service}) to zone"
         end
       end
 
@@ -252,9 +250,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
       target = root.attributes["target"]
       version = root.attributes["version"]
 
-      Puppet.debug("Target is: #{target}")
-
-
       # Loop through the zone elements
       doc.elements.each("zone/*") do |e|
 
@@ -327,9 +322,9 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
             if rule.name == 'destination'
               rule_destination['address'] = rule.attributes["address"]
               if rule.attributes["invert"] == 'true'
-                rule_destination['invert'] = true
+                rule_destination['invert'] = 'true'
               else
-                rule_destination['invert'] = rule.attributes["invert"].nil? ? nil : false
+                rule_destination['invert'] = rule.attributes["invert"].nil? ? nil : 'false'
               end
               rule_destination.delete_if { |key,value| key == 'invert' and value == nil}
             end
@@ -446,8 +441,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
       else
         masquerade = ["false"]
       end
-
-      Puppet.debug("Service is: #{service}")
 
       # Add hash to the zone array
       zone << new({
