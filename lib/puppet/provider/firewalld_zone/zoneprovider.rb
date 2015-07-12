@@ -11,13 +11,11 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
   mk_resource_methods
 
   def flush
-      p "Flush property_hash is: #{@property_hash}"
       Puppet.debug "firewalld zone provider: flushing (#{@resource[:name]})"
       write_zonefile
   end
 
   def create
-      p "Create property_hash is: #{@property_hash}"
       Puppet.debug "firewalld zone provider: create (#{@resource[:name]})"
       write_zonefile
   end
@@ -468,7 +466,6 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
         path = '/etc/firewalld/zones' + @resource[:name] + '.xml'
         File.delete(path)
         Puppet.debug "firewalld zone provider: removing (#{path})"
-        p "Destroy property_hash is: #{@property_hash}"
         @property_hash.clear
     end
 
