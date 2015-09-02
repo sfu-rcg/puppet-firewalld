@@ -311,9 +311,9 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
             if rule.name == 'source'
               rule_source['address'] = rule.attributes["address"]
               if rule.attributes["invert"] == 'true'
-                rule_source['invert'] = 'true'
+                rule_source['invert'] = true
               else
-                rule_source['invert'] = rule.attributes["invert"].nil? ? nil : 'false'
+                rule_source['invert'] = rule.attributes["invert"].nil? ? nil : false
               end
               rule_source.delete_if { |key,value| key == 'invert' and value == nil}
 
@@ -321,9 +321,9 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
             if rule.name == 'destination'
               rule_destination['address'] = rule.attributes["address"]
               if rule.attributes["invert"] == 'true'
-                rule_destination['invert'] = 'true'
+                rule_destination['invert'] = true
               else
-                rule_destination['invert'] = rule.attributes["invert"].nil? ? nil : 'false'
+                rule_destination['invert'] = rule.attributes["invert"].nil? ? nil : false
               end
               rule_destination.delete_if { |key,value| key == 'invert' and value == nil}
             end
@@ -406,44 +406,29 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
             'audit'         => rule_audit.empty? ? nil : rule_audit,
             'action'        => rule_action.empty? ? nil : rule_action,
             'family'        => rule_family.empty? ? nil : rule_family,
-           }
+          }
 
-           # remove services if not set so the data type matches the data type returned by the puppet resource.
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'service' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'forward_port' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'protocol' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'icmp_block' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'masquerade' and value == false} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'audit' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'log' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'destination' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'source' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'port' and value == nil} }
-           rich_rules.each { |a| a.delete_if { |key,value| key == 'family' and value == nil} }
+          # remove services if not set so the data type matches the data type returned by the puppet resource.
+          rich_rules.each do |rr|
 
-           rich_rules.each { |rr|
-             if rr["action"]
-               rr["action"].delete_if {|key,value| key == 'limit' and value == nil}
-               rr["action"].delete_if {|key,value| key == 'reject_type' and value == nil}
-             end
-             if rr["log"]
-               rr["log"].delete_if {|key,value| key == 'prefix' and value == nil}
-               rr["log"].delete_if {|key,value| key == 'level' and value == nil}
-               rr["log"].delete_if {|key,value| key == 'limit' and value == nil}
-             end
-             if rr["forward_port"]
-               rr["forward_port"].delete_if {|key,value| key == 'to_addr' and value == nil}
-             end
-           }
+            # This will recursively remove any hashes that have nil values
+            # We must still specify special items like masquerade because it's false rather than nil
+            p = proc do |_, v|
+              v.delete_if(&p) if v.respond_to? :delete_if
+              v.nil? || v.respond_to?(:"empty?") && v.empty?
+            end
+            rr.delete_if(&p)
+
+            rr.delete_if { |key,value| key == 'masquerade' and value == false}
+          end
         end
-
       end
 
       # convert the masquerade variable from boolean to array so the data type matches the data type returned by the puppet resource.
       if masquerade
-        masquerade = ["true"]
+        masquerade = ['true']
       else
-        masquerade = ["false"]
+        masquerade = ['false']
       end
 
       # Add hash to the zone array
