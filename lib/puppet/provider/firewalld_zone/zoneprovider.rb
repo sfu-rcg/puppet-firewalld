@@ -464,13 +464,30 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
     if resource[:target] == nil
       resource[:target] = ''
     end
-    if @property_hash[:name] and not(@property_hash[:ensure].nil? or @property_hash[:ensure] == :absent)
-      unless consistent?
-        Puppet.debug("Found IPTables is not consistent with firewalld's default zone, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
-        firewall('--reload')
+    @property_hash[:ensure] == :present || false
+  end
+
+  # Prefetch xml data.
+  # This prefetch is special to zone as it does consistency checking
+  def self.prefetch(resources)
+    debug("[prefetch(resources)]")
+    Puppet.debug "firewalld prefetch instance: #{instances}"
+    instances.each do |prov|
+      Puppet.debug "firewalld prefetch instance resource: (#{prov.name})"
+      if resource = resources[prov.name]
+        resource.provider = prov
+
+        # Checking for consistency here so it's not called during `puppet resource` rather only on puppet runs
+        unless prov.consistent?
+          Puppet.debug("Found IPTables is not consistent with firewalld's default zone, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
+          firewall('--reload')
+          unless prov.consistent?
+            Puppet.fail("Bad zone XML found, check your zone configuration")
+          end
+        end
+
       end
     end
-    @property_hash[:ensure] == :present || false
   end
 
   def consistent?
