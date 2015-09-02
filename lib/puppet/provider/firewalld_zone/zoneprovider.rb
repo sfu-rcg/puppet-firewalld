@@ -479,19 +479,29 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
     if resource[:target] == nil
       resource[:target] = ''
     end
-    if (not consistent?) and not (@property_hash[:ensure].nil? or @property_hash[:ensure] == :absent)
-      Puppet.debug("Found IPTables is not consistent with firewalld's default zone, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
-      firewall('--reload')
+    if @property_hash[:name] and not(@property_hash[:ensure].nil? or @property_hash[:ensure] == :absent)
+      unless consistent?
+        Puppet.debug("Found IPTables is not consistent with firewalld's default zone, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
+        firewall('--reload')
+      end
     end
     @property_hash[:ensure] == :present || false
   end
 
   def consistent?
-    iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
-    iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
+    iptables_allow = []
+    iptables_deny = []
+    begin
+      iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
+      iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
+    rescue
+    end
 
-    iptables_deny = iptables('-L', "IN_#{@resource[:name]}_deny", '-n').split("\n")
-    iptables_deny.delete_if { |val| ! val.start_with?("DROP", "REJECT") }
+    begin
+      iptables_deny = iptables('-L', "IN_#{@resource[:name]}_deny", '-n').split("\n")
+      iptables_deny.delete_if { |val| ! val.start_with?("DROP", "REJECT") }
+    rescue
+    end
 
     firewallcmd = firewall("--zone=#{@resource[:name]}", '--list-all').split("\n")
     firewallcmd.select! { |val| /\srule family/ =~ val }
@@ -511,6 +521,11 @@ Puppet::Type.type(:firewalld_zone).provide :zoneprovider, :parent => Puppet::Pro
 
     firewallcmd_accept = firewallcmd_exp.select { |val| /accept\Z/ =~ val }
     firewallcmd_deny = firewallcmd_exp.select { |val| /reject\Z|drop\Z/ =~ val }
+
+
+    unless iptables_allow.count == firewallcmd_accept.count && iptables_deny.count == firewallcmd_deny.count
+      Puppet.debug("Consistency issue between iptables and firewalld zone #{@property_hash[:name]}:\niptables_allow.count: #{iptables_allow.count}\nfirewallcmd_accept.count: #{firewallcmd_accept.count}\niptables_deny.count: #{iptables_deny.count}\nfirewallcmd_deny.count: #{firewallcmd_deny.count}")
+    end
 
     # Technically the IPTables allow list and the firewallcmd_accept list(as well as deny lists) numbering lines up 
     # and we could do a regex comparison to verify that the EXACT values existed if we wanted to iptables_allow[index] =~ /...firewallcmd_accept[index].../ for example
