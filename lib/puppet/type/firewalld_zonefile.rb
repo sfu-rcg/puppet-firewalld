@@ -8,7 +8,7 @@ class Hash
 end
 
 
-Puppet::Type.newtype(:firewalld_zone) do
+Puppet::Type.newtype(:firewalld_zonefile) do
   desc <<-EOT
       = Define: firewalld::zone
 
@@ -71,10 +71,6 @@ Puppet::Type.newtype(:firewalld_zone) do
     defaultto { :present }
   end
 
-  #def exists?
-  #  self[:ensure] == :present
-  #end
-
   newparam(:name) do
     desc "The name of the zone"
     validate do |value|
@@ -96,7 +92,6 @@ Puppet::Type.newtype(:firewalld_zone) do
     EOT
     newvalues('ACCEPT', '%%REJECT%%', 'DROP', '')
     def insync?(is)
-        return true
       self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
       if (@should.empty? || @should == ['']) && is == :absent then
         return true
@@ -114,22 +109,15 @@ Puppet::Type.newtype(:firewalld_zone) do
 
   newproperty(:short) do
       desc "short readable name"
-      def insync?(is)
-        true
-      end
   end
 
-  newproperty(:description) do
+  newparam(:description) do
       desc "long description of zone"
-      def insync?(is)
-        true
-      end
   end
 
   newproperty(:interfaces, :array_matching => :all) do
       desc "list of interfaces to bind to a zone"
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -151,7 +139,6 @@ Puppet::Type.newtype(:firewalld_zone) do
         ranges ("address/mask") to bind to a zone
       EOT
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -179,7 +166,6 @@ Puppet::Type.newtype(:firewalld_zone) do
           ]
       EOT
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -200,7 +186,6 @@ Puppet::Type.newtype(:firewalld_zone) do
       desc "list of predefined firewalld services"
 
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -219,7 +204,6 @@ Puppet::Type.newtype(:firewalld_zone) do
   newproperty(:icmp_blocks, :array_matching => :all) do
       desc "list of predefined icmp-types to block"
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -240,7 +224,6 @@ Puppet::Type.newtype(:firewalld_zone) do
       newvalues(:true, :false)
       defaultto false
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -270,7 +253,6 @@ Puppet::Type.newtype(:firewalld_zone) do
           ]
       EOT
       def insync?(is)
-        return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
           return true
@@ -355,26 +337,26 @@ Puppet::Type.newtype(:firewalld_zone) do
         end
       end
 
-
-      #def munge(s)
-      #  puts "MUNGE: #{@resource.catalog}"
-      #  catgrab = @resource.catalog.resources.collect do |r|
-      #    puts "MUNGE: #{r}"
-      #    r.name if r.is_a?(Puppet::Type.type(:firewalld_rich_rule)) && r[:zone] == self[:name]
-      #  end.compact
-      #  puts "MUNGE cat: #{catgrab}"
-      #end
-
       def insync?(is)
+        @should = @should.flatten
+        #puts "INSYNC IS: #{is}\nSHOULD: #{@should.inspect}"
         #gathered_rules = gather_rich_rules_pre
         #puts "GATHER: #{gathered_rules}"
         #@should.push(*gathered_rules)
         #puts "New @should: #{@should.inspect}"
         #create_rich_rule(@should[0]) unless @should.nil? or @should.empty? or @should == :absent
-        #super(is)
+        #insync = super(is)
+        #puts "INSYNC IS: #{insync}"
         #working#create_rich_rule(@should[0]) unless @should.nil? or @should.empty? or @should == :absent
         #working#create_rich_rule(@should[0]) unless @should.nil? or @should.empty? or @should == :absent
-        true
+        super(is)
+        #true
+      end
+
+      def change_to_s(current, desire)
+        #puts "Current: #{current.inspect}\nDesire: #{desire.inspect}"
+        "Removing rich_rule #{(current-desire).inspect},
+        Adding rich_rule #{(desire-current).inspect}"
       end
       #def gather_rich_rules_pre
       #  #puts "Catalog #{@resource.catalog.inspect}"
@@ -478,101 +460,17 @@ Puppet::Type.newtype(:firewalld_zone) do
       #end
   end
 
-  autorequire(:file) do
-    ["/etc/firewalld/zones/#{self[:name]}.xml"]
-  end
-  autorequire(:firewalld_rich_rule) do
-    catalog.resources.collect do |r|
-      r.name if r.is_a?(Puppet::Type.type(:firewalld_rich_rule)) && r[:zone] == self[:name]
-    end.compact
-  end
+  #autorequire(:file) do
+  #  ["/etc/firewalld/zones/#{self[:name]}.xml"]
+  #end
+  #autorequire(:firewalld_rich_rule) do
+  #  catalog.resources.collect do |r|
+  #    r.name if r.is_a?(Puppet::Type.type(:firewalld_rich_rule)) && r[:zone] == self[:name]
+  #  end.compact
+  #end
 
-  def should_content
-    return @generated_content if @generated_content
-    @generated_content = ""
-    rich_rules = []
-
-    resources = catalog.resources.select do |r|
-      r.is_a?(Puppet::Type.type(:firewalld_rich_rule)) && r[:zone] == self[:name]
-    end
-
-    resources.each do |r|
-      rich_rules << r[:rich_rules]
-      #rich_rules << ["#{r[:name]}", r[:rich_rules]]
-      #rich_rules << ["#{r[:order]}___#{r[:name]}", fragment_content(r)]
-    end
-
-    #if self[:order] == 'numeric'
-    #  sorted = rich_rules.sort do |a, b|
-    #    def decompound(d)
-    #      d.split('___').map { |v| v =~ /^\d+$/ ? v.to_i : v }
-    #    end
-
-    #    decompound(a[0]) <=> decompound(b[0])
-    #  end
-    #else
-    #  sorted = rich_rules.sort do |a, b|
-    #    def decompound(d)
-    #      d.split('___').first
-    #    end
-
-    #    decompound(a[0]) <=> decompound(b[0])
-    #  end
-    #end
-
-    @generated_content = rich_rules.flatten
-    #@generated_content = rich_rules.map { |rr| rr[1] }.join(', ')
-
-    @generated_content
-  end
-
-  def fragment_content(r)
-    puts "FRAGMENT_CONTENT"
-    if r[:rich_rules].nil? == false
-      fragment_content = r[:rich_rules]
-    elsif r[:source].nil? == false
-      @source = nil
-      Array(r[:source]).each do |source|
-        if Puppet::FileServing::Metadata.indirection.find(source)
-          @source = source 
-          break
-        end
-      end
-      self.fail "Could not retrieve source(s) #{r[:source].join(", ")}" unless @source
-      tmp = Puppet::FileServing::Content.indirection.find(@source, :environment => catalog.environment)
-      fragment_content = tmp.content unless tmp.nil?
-    end
-
-    if self[:ensure_newline]
-      fragment_content<<"\n" unless fragment_content =~ /\n$/
-    end
-
-    fragment_content
-  end
-
-  def generate
-    file_opts = {
-      :ensure => self[:ensure] == :absent ? :absent : :present,
-    }
-
-    [:name, :target, :short, :description, :interfaces, :sources, :ports, :services, :icmp_blocks, :masquerade, :forward_ports].each do |param|
-      unless self[param].nil?
-        file_opts[param] = self[param]
-      end
-    end
-    file_opts[:rich_rules] = self[:rich_rules] unless self[:rich_rules].nil? or self[:rich_rules].empty?
-
-    [Puppet::Type.type(:firewalld_zonefile).new(file_opts)]
-  end
-
-  def eval_generate
-    content = should_content
-
-    if !content.nil? and !content.empty?
-      content << [self[:rich_rules]] if !self[:rich_rules].nil? and !self[:rich_rules].empty?
-      catalog.resource("Firewalld_zonefile[#{self[:name]}]")[:rich_rules] = [content.flatten]
-    end
-    []
-  end
+  #def generate
+  #  puts "RUNNING GENERATE"
+  #end
 end
 

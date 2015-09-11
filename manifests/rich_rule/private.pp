@@ -36,23 +36,21 @@
 #        reject_type  => 'icmp-host-prohibited',},
 #      },],}
 #
-define firewalld::rich_rule(
-  $zone,
+define firewalld::rich_rule::private(
   $ensure     = present,
-  $rich_rules = [],
 ) {
-  
-  #$name_merge = merge_array_of_hash($rich_rules, {"zone" => $zone})
 
-  #firewalld::rich_rule::private { $name_merge: ensure => $ensure }
+  $rule_name  = hash_deep_sort($name)
+  $rich_rules = [delete($name, 'zone')]
+  $zone       = $name['zone']
 
-    include firewalld::configuration
+  include firewalld::configuration
   
-    firewalld_rich_rule { $name:
-      ensure     => $ensure,
-      zone       => $zone,
-      rich_rules => $rich_rules,
-      notify     => Exec['firewalld::reload'],
-      require    => Firewalld_zone[$zone],
-    }
+  firewalld_rich_rule { $rule_name:
+    ensure     => $ensure,
+    zone       => $zone,
+    rich_rules => $rich_rules,
+    notify     => Exec['firewalld::reload'],
+    #require    => Firewalld_zone[$zone],
+  }
 }
