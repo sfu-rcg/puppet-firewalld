@@ -225,6 +225,13 @@ Puppet::Type.newtype(:firewalld_rich_rule) do
       end
     end
   end
+
+  autorequire(:firewalld_zone) do
+    catalog.resources.collect do |r|
+      r.name if r.is_a?(Puppet::Type.type(:firewalld_zone)) && r[:name] == self[:zone]
+    end.compact
+  end
+
   
   #validate do 
   #  #puts "Validate: #{value}"

@@ -1,12 +1,65 @@
 require 'puppet'
 require 'puppet/property'
+require 'puppet/property/boolean'
 
 class Hash
   def deep_sort
     Hash[sort.map {|k, v| [k, v.is_a?(Hash) ? v.deep_sort : v]}]
   end
+#  def diff(other)
+#
+#    test = [self] - [other]
+#    #puts "DIFF #{test}"
+#    #(self.keys + other.keys).uniq.inject({}) do |memo, key|
+#    #  unless self[key] == other[key]
+#    #    if self[key].kind_of?(Hash) && other[key].kind_of?(Hash)
+#    #      memo[key] = self[key].diff(other[key])
+#    #    else
+#    #      memo[key] = [self[key], other[key]] 
+#    #    end
+#    #  end
+#    #  memo
+#    #end
+#  end
+#  def hasdiff(one, other)
+#    (one.keys + other.keys).uniq.inject({}) do |memo, key|
+#      unless one.key?(key) && other.key?(key) && one[key] == other[key]
+#        memo[key] = [one.key?(key) ? one[key] : :_no_key, other.key?(key) ? other[key] : :_no_key]
+#      end
+#      memo
+#    end
+#  end
 end
 
+#class Array
+#  def hash_diff(other)
+#    memo_arr = []
+#    self.each do |cur_arr_val|
+#      puts "CUR_ARR_VAL: #{cur_arr_val}\n"
+#      other.each do |des_arr_val|
+#        #memo_arr << cur_arr_val.hasdiff(cur_arr_val,des_arr_val)
+#        unless cur_arr_val == des_arr_val
+#          result = cur_arr_val.diff(des_arr_val)
+#        final_result = result unless result.empty? or result.nil?
+#        memo_arr << [ cur_arr_val, des_arr_val ] if result.empty? or result.nil?
+#
+#        #(cur_arr_val.keys + des_arr_val.keys).uniq.inject({}) do |memo, key|
+#        #  unless cur_arr_val[key] == des_arr_val[key]
+#        #    if cur_arr_val[key].kind_of?(Hash) &&  des_arr_val[key].kind_of?(Hash)
+#        #      memo[key] = cur_arr_val[key].diff(des_arr_val[key])
+#        #    else
+#        #      memo[key] = [cur_arr_val[key], des_arr_val[key]] 
+#        #    end
+#        #  end
+#        #  #puts memo.keys
+#        #  memo_arr << memo
+#        #end
+#      end
+#    end
+#    puts "hash_diff #{memo_arr}"
+#    memo_arr
+#  end
+#end
 
 Puppet::Type.newtype(:firewalld_zonefile) do
   desc <<-EOT
@@ -64,6 +117,17 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           ],
        }
   EOT
+
+  def munge_boolean(value)
+    case value
+    when true, "true", :true
+      :true
+    when false, "false", :false
+      :false
+    else
+      fail("munge_boolean only takes booleans")
+    end
+  end
  
   ensurable do
     defaultvalues
@@ -111,7 +175,7 @@ Puppet::Type.newtype(:firewalld_zonefile) do
       desc "short readable name"
   end
 
-  newparam(:description) do
+  newproperty(:description) do
       desc "long description of zone"
   end
 
@@ -129,6 +193,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return (is == @should or is == @should.map(&:to_s))
         else
           return @should.any? {|want| property_matches?(is, want) }
+        end
+      end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
         end
       end
   end
@@ -150,6 +221,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return (is == @should or is == @should.map(&:to_s))
         else
           return @should.any? {|want| property_matches?(is, want) }
+        end
+      end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
         end
       end
   end
@@ -179,6 +257,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return @should.any? {|want| property_matches?(is, want) }
         end
       end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
+        end
+      end
   
   end
 
@@ -199,6 +284,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return @should.any? {|want| property_matches?(is, want) }
         end
       end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
+        end
+      end
   end
 
   newproperty(:icmp_blocks, :array_matching => :all) do
@@ -217,12 +309,23 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return @should.any? {|want| property_matches?(is, want) }
         end
       end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
+        end
+      end
    end
 
-  newproperty(:masquerade, :array_matching => :all) do
+  newproperty(:masquerade, :boolean => true) do
       desc "enable masquerading ?"
-      newvalues(:true, :false)
+      newvalues(true, false)
       defaultto false
+      munge do |value|
+        @resource.munge_boolean(value)
+      end
+
       def insync?(is)
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
         if @should.empty? && is == :absent then
@@ -237,6 +340,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return @should.any? {|want| property_matches?(is, want) }
         end
       end
+      #def should_to_s(s)
+      #  if s.is_a?(Array)
+      #    s
+      #  else
+      #    [s]
+      #  end
+      #end
   end
 
   newproperty(:forward_ports, :array_matching => :all) do
@@ -264,6 +374,13 @@ Puppet::Type.newtype(:firewalld_zonefile) do
           return (is == @should or is == @should.map(&:to_s))
         else
           return @should.any? {|want| property_matches?(is, want) }
+        end
+      end
+      def should_to_s(s)
+        if s.is_a?(Array)
+          s
+        else
+          [s]
         end
       end
   end
@@ -326,6 +443,10 @@ Puppet::Type.newtype(:firewalld_zonefile) do
       defaultto([])
 
       def munge(s)
+        #puts "MUNGE #{s.inspect}"
+        if s == :absent
+          return []
+        end
         if !s.nil? or !s.empty?
           if s.is_a?(Hash)
             [s.deep_sort]
@@ -333,13 +454,31 @@ Puppet::Type.newtype(:firewalld_zonefile) do
             s.map! { |x| x.deep_sort }
           end
         else
-          [s]
+          if s.is_a?(Hash)
+            s.deep_sort
+          else
+            [s]
+          end
         end
       end
 
       def insync?(is)
-        @should = @should.flatten
         #puts "INSYNC IS: #{is}\nSHOULD: #{@should.inspect}"
+        self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
+        if @should.empty? && is == :absent then
+          return true
+        end
+        @should = @should.uniq
+        @should = @should.flatten
+
+        if match_all? then
+          return false unless is.is_a? Array
+          return false unless is.length == @should.length
+          return (is == @should or is == @should.map(&:to_s))
+        else
+          return @should.any? {|want| property_matches?(is, want) }
+        end
+
         #gathered_rules = gather_rich_rules_pre
         #puts "GATHER: #{gathered_rules}"
         #@should.push(*gathered_rules)
@@ -349,14 +488,30 @@ Puppet::Type.newtype(:firewalld_zonefile) do
         #puts "INSYNC IS: #{insync}"
         #working#create_rich_rule(@should[0]) unless @should.nil? or @should.empty? or @should == :absent
         #working#create_rich_rule(@should[0]) unless @should.nil? or @should.empty? or @should == :absent
-        super(is)
+        #super(is)
         #true
       end
 
       def change_to_s(current, desire)
         #puts "Current: #{current.inspect}\nDesire: #{desire.inspect}"
-        "Removing rich_rule #{(current-desire).inspect},
-        Adding rich_rule #{(desire-current).inspect}"
+        #diff = current.hash_diff(desire)
+        #"Removing rich_rule(s) #{diff[0]},
+        #Adding rich_rule(s) #{diff[1]}"
+
+        if current.nil? or current.empty? or current == :absent
+          "Adding rich_rule(s) #{(desire).inspect}"
+        elsif desire.nil? or desire.empty? or desire == :absent
+          "Removing rich_rule(s) #{(current).inspect}"
+        else
+          if (current-desire).empty?
+            "Adding rich_rule(s) #{(desire-current).inspect}"
+          elsif (desire-current).empty?
+            "Removing rich_rule(s) #{(current-desire).inspect}"
+          else
+            "Removing rich_rule(s) #{(current-desire).inspect},
+            Adding rich_rule(s) #{(desire-current).inspect}"
+          end
+        end
       end
       #def gather_rich_rules_pre
       #  #puts "Catalog #{@resource.catalog.inspect}"

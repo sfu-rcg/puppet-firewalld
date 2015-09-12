@@ -41,18 +41,12 @@ define firewalld::rich_rule(
   $ensure     = present,
   $rich_rules = [],
 ) {
+  include firewalld::configuration
   
-  #$name_merge = merge_array_of_hash($rich_rules, {"zone" => $zone})
-
-  #firewalld::rich_rule::private { $name_merge: ensure => $ensure }
-
-    include firewalld::configuration
-  
-    firewalld_rich_rule { $name:
-      ensure     => $ensure,
-      zone       => $zone,
-      rich_rules => $rich_rules,
-      notify     => Exec['firewalld::reload'],
-      require    => Firewalld_zone[$zone],
-    }
+  firewalld_rich_rule { $name:
+    ensure     => $ensure,
+    zone       => $zone,
+    rich_rules => $rich_rules,
+    notify     => Exec['firewalld::reload'],
+  }
 }

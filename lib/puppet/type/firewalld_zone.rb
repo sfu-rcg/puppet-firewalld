@@ -1,12 +1,13 @@
+#require 'pp'
 require 'puppet'
 require 'puppet/property'
+require 'puppet/property/boolean'
 
 class Hash
   def deep_sort
     Hash[sort.map {|k, v| [k, v.is_a?(Hash) ? v.deep_sort : v]}]
   end
 end
-
 
 Puppet::Type.newtype(:firewalld_zone) do
   desc <<-EOT
@@ -64,6 +65,17 @@ Puppet::Type.newtype(:firewalld_zone) do
           ],
        }
   EOT
+
+  def munge_boolean(value)
+    case value
+    when true, "true", :true
+      :true
+    when false, "false", :false
+      :false
+    else
+      fail("munge_boolean only takes booleans")
+    end
+  end
  
   ensurable do
     defaultvalues
@@ -97,18 +109,6 @@ Puppet::Type.newtype(:firewalld_zone) do
     newvalues('ACCEPT', '%%REJECT%%', 'DROP', '')
     def insync?(is)
         return true
-      self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
-      if (@should.empty? || @should == ['']) && is == :absent then
-        return true
-      end
-        
-      if match_all? then
-        return false unless is.is_a? Array
-        return false unless is.length == @should.length
-        return (is == @should or is == @should.map(&:to_s))
-      else
-        return @should.any? {|want| property_matches?(is, want) }
-      end
     end
   end
 
@@ -235,10 +235,14 @@ Puppet::Type.newtype(:firewalld_zone) do
       end
    end
 
-  newproperty(:masquerade, :array_matching => :all) do
+  newproperty(:masquerade, :boolean => true) do
       desc "enable masquerading ?"
-      newvalues(:true, :false)
+      newvalues(true, false)
       defaultto false
+      munge do |value|
+        @resource.munge_boolean(value)
+      end
+
       def insync?(is)
         return true
         self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
@@ -344,6 +348,10 @@ Puppet::Type.newtype(:firewalld_zone) do
       defaultto([])
 
       def munge(s)
+        #puts "MUNGE #{s.inspect}"
+        if s == :absent
+          return []
+        end
         if !s.nil? or !s.empty?
           if s.is_a?(Hash)
             [s.deep_sort]
@@ -351,9 +359,34 @@ Puppet::Type.newtype(:firewalld_zone) do
             s.map! { |x| x.deep_sort }
           end
         else
-          [s]
+          if s.is_a?(Hash)
+            s.deep_sort
+          else
+            [s]
+          end
         end
       end
+
+      #def is_to_s(hash = is)
+      #  puts "IS_TO_S #{is}"
+      #  hash.pp
+      #end
+      #def should_to_s(hash = should)
+      #  puts "SHOULD_TO_S #{is}"
+      #  hash.pp
+      #end
+
+      #def munge(s)
+      #  if !s.nil? or !s.empty?
+      #    if s.is_a?(Hash)
+      #      [s.deep_sort]
+      #    else
+      #      s.map! { |x| x.deep_sort }
+      #    end
+      #  else
+      #    [s]
+      #  end
+      #end
 
 
       #def munge(s)
@@ -526,30 +559,6 @@ Puppet::Type.newtype(:firewalld_zone) do
     @generated_content
   end
 
-  def fragment_content(r)
-    puts "FRAGMENT_CONTENT"
-    if r[:rich_rules].nil? == false
-      fragment_content = r[:rich_rules]
-    elsif r[:source].nil? == false
-      @source = nil
-      Array(r[:source]).each do |source|
-        if Puppet::FileServing::Metadata.indirection.find(source)
-          @source = source 
-          break
-        end
-      end
-      self.fail "Could not retrieve source(s) #{r[:source].join(", ")}" unless @source
-      tmp = Puppet::FileServing::Content.indirection.find(@source, :environment => catalog.environment)
-      fragment_content = tmp.content unless tmp.nil?
-    end
-
-    if self[:ensure_newline]
-      fragment_content<<"\n" unless fragment_content =~ /\n$/
-    end
-
-    fragment_content
-  end
-
   def generate
     file_opts = {
       :ensure => self[:ensure] == :absent ? :absent : :present,
@@ -560,7 +569,12 @@ Puppet::Type.newtype(:firewalld_zone) do
         file_opts[param] = self[param]
       end
     end
-    file_opts[:rich_rules] = self[:rich_rules] unless self[:rich_rules].nil? or self[:rich_rules].empty?
+    #if self[:rich_rules].empty?
+    #  file_opts[:rich_rules] = :absent #unless self[:rich_rules].nil? or self[:rich_rules].empty?
+    #else
+      file_opts[:rich_rules] = self[:rich_rules] #unless self[:rich_rules].nil? or self[:rich_rules].empty?
+    #end
+    #file_opts[:rich_rules] = (self[:rich_rules].nil? or self[:rich_rules].empty?) ? [[{}]] : self[:rich_rules]
 
     [Puppet::Type.type(:firewalld_zonefile).new(file_opts)]
   end
@@ -570,7 +584,7 @@ Puppet::Type.newtype(:firewalld_zone) do
 
     if !content.nil? and !content.empty?
       content << [self[:rich_rules]] if !self[:rich_rules].nil? and !self[:rich_rules].empty?
-      catalog.resource("Firewalld_zonefile[#{self[:name]}]")[:rich_rules] = [content.flatten]
+      catalog.resource("Firewalld_zonefile[#{self[:name]}]")[:rich_rules] = content.flatten
     end
     []
   end
