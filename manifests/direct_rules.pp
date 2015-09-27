@@ -5,7 +5,7 @@ define firewalld::direct_rules(
 ) {
   include firewalld::directcall
 
-  firewalld_directtest { $name:
+  firewalld_direct { $name:
     chains       => $chains,
     rules        => $rules,
     passthroughs => $passthroughs,

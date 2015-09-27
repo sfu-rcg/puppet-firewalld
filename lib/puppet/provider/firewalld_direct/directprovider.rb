@@ -6,7 +6,7 @@ require 'rexml/document'
 include REXML
 
 
-Puppet::Type.type(:firewalld_directtest).provide :directprovider do
+Puppet::Type.type(:firewalld_direct).provide :directprovider do
   @doc = "The direct rule config manipulator"
 
   commands :firewall => 'firewall-cmd'
@@ -16,10 +16,6 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
 
   include PuppetX::Firewalld::Direct
 
-  #class << self
-  #  attr_accessor :firewalld_direct_classvars
-  #end
-
   def firewalld_direct_classvars
     self.class.firewalld_direct_classvars
   end
@@ -27,219 +23,103 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
   def firewalld_direct_classvars=(*args)
     self.class.firewalld_direct_classvars = *args
   end
-  #
-  #@firewalld_direct_classvars =
-  #  {
-  #    :target_file          => '/etc/firewalld/direct.xml',
-  #    :old                  => {
-  #      :chains               => [],
-  #      :rules                => [],
-  #      :passthroughs         => [],
-  #    },
-  #    :new                  => {
-  #      :chains               => [],
-  #      :rules                => [],
-  #      :passthroughs         => [],
-  #    },
-  #    :num_direct_resources => 0,
-  #    :num_runs             => 0,
-  #    :initialized          => false,
-  #  }
-
-  #def initialize(*args)
-  #  super(*args)
-  #  firewalld_direct_classvars[:initialized] = true unless firewalld_direct_classvars[:initialized]
-  #end
-
-  #mk_resource_methods
 
   def create
-    Puppet.debug('firewalld_directtest, why are we running create???')
-    puts 'firewalld_directtest, why are we running create???'
+    # This should never run since we always return true in exists?.
+    Puppet.debug('firewalld_direct, why are we running create???')
     send("chains=", resource.should_content('chains'))
     send("rules=", resource.should_content('rules'))
     send("passthroughs=", resource.should_content('passthroughs'))
-    #resource.property_fix
   end
 
   def destroy
-    #File.unlink(resource[:path]) if exists?
-    Puppet.debug('firewalld_directtest, why are we running destroy???')
-    puts 'firewalld_directtest, why are we running destroy???'
+    # This will never run
+  end
+
+  def remove_items(property, tag, *args)
+    puts "REMOVE #{tag}"
+    if firewalld_direct_classvars[:new][property] != firewalld_direct_classvars[:old][property]
+      results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]
+      results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
+      puts "#{tag} #{results}"
+      firewalld_direct_classvars[:resources].each do |key,value| 
+        puts "Firewalld_direct[#{key}] prompted removal of #{results}" unless (results_from & value[property]).empty?
+      end
+      results_found = firewalld_direct_classvars[:resources].values.map do |res|
+        res.name if res[property].include?(results)
+      end
+      results.each do |res|
+        exec_firewall('--direct',"--remove-#{tag}", *args.map { |x| "#{res[x]}" })
+      end
+      return true
+    end
+    return false
   end
 
   def remove_chains
-    puts "REMOVE CHAINS"
-    if firewalld_direct_classvars[:new][:chains] != firewalld_direct_classvars[:old][:chains]
-      results = firewalld_direct_classvars[:old][:chains] - firewalld_direct_classvars[:new][:chains]
-      puts "CHAINS REMOVER #{firewalld_direct_classvars[:old][:chains]} - #{firewalld_direct_classvars[:new][:chains]}"
-      puts "chains #{results}"
-      results.each do |res|
-        exec_firewall('--direct','--remove-chain',"#{res['ipv']}","#{res['table']}","#{res['chain']}")
-      end
-      return true
-    end
-    return false
+    remove_items(:chains, 'chain', 'ipv', 'table', 'chain')
   end
 
   def remove_rules
-    puts "REMOVE RULES"
-    if firewalld_direct_classvars[:new][:rules] != firewalld_direct_classvars[:old][:rules]
-      results = firewalld_direct_classvars[:old][:rules] - firewalld_direct_classvars[:new][:rules]
-      results_from = firewalld_direct_classvars[:new][:rules] - firewalld_direct_classvars[:old][:rules]
-      puts "rules #{results}"
-      firewalld_direct_classvars[:resources].each do |key,value| 
-        puts "Firewalld_directtest[#{key}] prompted removal of #{results}" unless (results_from & value[:rules]).empty?
-      end
-      binding.pry
-      results_found = firewalld_direct_classvars[:resources].values.map do |res|
-        res.name if res[:rules].include?(results)
-      end
-      results.each do |res|
-        exec_firewall('--direct','--remove-rule',"#{res['ipv']}","#{res['table']}","#{res['chain']}","#{res['priority']}","#{res['args']}")
-      end
-      return true
-    end
-    return false
+    remove_items(:rules, 'rule', 'ipv', 'table', 'chain', 'priority', 'args')
   end
 
   def remove_passthroughs
-    puts "REMOVE PASSTHROUGHS"
-    if firewalld_direct_classvars[:new][:passthroughs] != firewalld_direct_classvars[:old][:passthroughs]
-      results = firewalld_direct_classvars[:old][:passthroughs] - firewalld_direct_classvars[:new][:passthroughs]
-      puts "passthroughs #{results}"
-      results.each do |res|
-        exec_firewall('--direct','--remove-passthrough',"#{res['ipv']}","#{res['args']}")
-      end
-      return true
-    end
-    return false
+    remove_items(:passthroughs, 'passthrough', 'ipv', 'args')
   end
 
   def chains
-    #puts "CHAINS GETTER #{@property_hash[:chains]} - #{resource.should_content('chains')}"
-    ##(@property_hash[:chains] == resource.should_content('chains')) ? resource.no_content : actual
-    #resource.should_content('chains')
-    ##(@property_hash[:chains] == resource.should_content('chains')) ? @property_hash[:chains] : resource.should_content('chains')
-    #@property_hash[:chains]
     puts "CHAINS GETTER #{firewalld_direct_classvars[:old][:chains]} - #{firewalld_direct_classvars[:new][:chains]}"
     puts "CHAINS GETTER Run: #{firewalld_direct_classvars[:num_runs]} Total: #{firewalld_direct_classvars[:num_direct_resources]}"
-    firewalld_direct_classvars[:resources][resource[:name].to_sym].merge!({ :chains => resource[:chains] })
-    firewalld_direct_classvars[:new][:chains] << resource[:chains]
-    if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
-      if firewalld_direct_classvars[:new][:chains] != firewalld_direct_classvars[:old][:chains]
-        firewalld_direct_classvars[:new][:chains].flatten!.uniq!
-        @property_hash[:chains] = firewalld_direct_classvars[:old][:chains]
-        resource[:chains] = firewalld_direct_classvars[:new][:chains]
-        return @property_hash[:chains]
-        #return {
-        #  :orig => firewalld_direct_classvars[:old][:chains],
-        #  :new  => firewalld_direct_classvars[:new][:chains].flatten!
-        #}
-      end
-    end
-    return resource[:chains]
+    process_property(:chains)
   end
 
   def chains=(*)
-    #should = resource.should_content('chains').flatten
-    #puts "CHAINS SETTER #{@property_hash[:chains]} - #{should}"
-    #if @property_hash[:chains]
-    #  results = @property_hash[:chains] - should
-    #  puts "chains #{results}"
-    #  results.each do |res|
-    #    exec_firewall('--direct','--remove-chain',"#{res['ipv']}","#{res['table']}","#{res['chain']}")
-    #  end
-    #end
-    #@property_hash[:chains] = should
+    # Everything is done in the getter method
   end
 
   def rules
-    #(@property_hash[:rules] == resource.should_content('rules')) ? resource.no_content : actual
-    #resource.should_content('rules')
-    #@property_hash[:rules]
-    firewalld_direct_classvars[:resources][resource[:name].to_sym].merge!({ :rules => resource[:rules] })
-    firewalld_direct_classvars[:new][:rules] << resource[:rules]
-    if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
-      if firewalld_direct_classvars[:new][:rules] != firewalld_direct_classvars[:old][:rules]
-        firewalld_direct_classvars[:new][:rules].flatten!.uniq!
-        @property_hash[:rules] = firewalld_direct_classvars[:old][:rules]
-        resource[:rules] = firewalld_direct_classvars[:new][:rules]
-        return @property_hash[:rules]
-        #return {
-        #  :orig => firewalld_direct_classvars[:old][:rules],
-        #  :new  => firewalld_direct_classvars[:new][:rules].flatten!
-        #}
-      end
-    end
-    return resource[:rules]
+    process_property(:rules)
   end
 
   def rules=(*)
-    #should = resource.should_content('rules').flatten
-    #puts "RULES SETTER #{@property_hash[:rules]} - #{should}"
-    #if @property_hash[:rules]
-    #  results = @property_hash[:rules] - should
-    #  puts "rules #{results}"
-    #  results.each do |res|
-    #    exec_firewall('--direct','--remove-rule',"#{res['ipv']}","#{res['table']}","#{res['chain']}","#{res['priority']}","#{res['args']}")
-    #  end
-    #end
-    #@property_hash[:rules] = resource.should_content('rules')
+    # Everything is done in the getter method
   end
+
   def passthroughs
-    #(@property_hash[:passthroughs] == resource.should_content('passthroughs')) ? resource.no_content : actual
-    #resource.should_content('passthroughs')
-    #@property_hash[:passthroughs]
-    firewalld_direct_classvars[:resources][resource[:name].to_sym].merge!({ :passthroughs => resource[:passthroughs] })
-    firewalld_direct_classvars[:new][:passthroughs] << resource[:passthroughs]
-    if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
-      if firewalld_direct_classvars[:new][:passthroughs] != firewalld_direct_classvars[:old][:passthroughs]
-        firewalld_direct_classvars[:new][:passthroughs].flatten!.uniq!
-        @property_hash[:passthroughs] = firewalld_direct_classvars[:old][:passthroughs]
-        resource[:passthroughs] = firewalld_direct_classvars[:new][:passthroughs]
-        return @property_hash[:passthroughs]
-        #return {
-        #  :orig => firewalld_direct_classvars[:old][:passthroughs],
-        #  :new  => firewalld_direct_classvars[:new][:passthroughs].flatten!
-        #}
-      end
-    end
-    return resource[:passthroughs]
+    process_property(:passthroughs)
   end
 
   def passthroughs=(*)
-    #should = resource.should_content('passthroughs').flatten
-    #puts "PASSTHROUGHS SETTER #{@property_hash[:passthroughs]} - #{should}"
-    #if @property_hash[:passthroughs]
-    #  results = @property_hash[:passthroughs] - should
-    #  puts "passthroughs #{results}"
-    #  results.each do |res|
-    #    exec_firewall('--direct','--remove-passthrough',"#{res['ipv']}","#{res['args']}")
-    #  end
-    #end
-    #@property_hash[:passthroughs] = resource.should_content('passthroughs')
+    # Everything is done in the getter method
+  end
+
+  def process_property(property)
+    firewalld_direct_classvars[:resources][resource[:name].to_sym].merge!({ property => resource[property] })
+    firewalld_direct_classvars[:new][property] << resource[property]
+    if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
+      if firewalld_direct_classvars[:new][property] != firewalld_direct_classvars[:old][property]
+        firewalld_direct_classvars[:new][property].flatten!.uniq!
+        @property_hash[property] = firewalld_direct_classvars[:old][property]
+        resource[property] = firewalld_direct_classvars[:new][property]
+        return @property_hash[property]
+      end
+    end
+    return resource[property]
   end
 
   def flush
     Puppet.debug "firewalld directfile provider: flushing (#{@resource[:name]})"
-    #remove_chains
-    #remove_rules
-    #remove_passthroughs
-    #write_directfile# unless destroy_zone
+    # We do not allow flushing until all resources of this type have been processed
+    # This is because we're writing to a single file and need to know the state the whole time
     if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
       r_bool = remove_rules
       p_bool = remove_passthroughs
       # Chains have to be removed last
       c_bool = remove_chains
-      write_directfile# if c_bool or r_bool or p_bool
+      write_directfile if c_bool or r_bool or p_bool
     end
   end
-
-  #def create
-  #  Puppet.debug "firewalld directfile provider: create (#{@resource[:name]})"
-  #  write_zonefile
-  #end
 
   def write_directfile
     Puppet.debug "firewalld directfile provider: write_directfile (#{@resource[:name]})"
@@ -284,15 +164,11 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
     #Reload is now done from a notify command in the puppet code
   end
 
-  # Utilized code from crayfishx/puppet-firewalld as the firewall-cmd needs it's arguments properly formatted
-  # This function does it well
   # Use example: exec_firewall('--permanent', '--zone', zonevar, '--remove-interface', interfacevar)
   def exec_firewall(*extra_args)
     args=[]
     args << extra_args
-    puts "PREFLATTEN: #{args.inspect}"
     args.flatten!.map! { |x| x.split(' ') }.flatten!
-    puts "EXEC_FIREWALL: #{args.inspect}"
     firewall(args)
   end
 
@@ -300,14 +176,6 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
     # We do not want any instances in this resource as it's a combiner
     []
   end
-
-  #def destroy
-  #  path = '/etc/firewalld/zones/' + @resource[:name] + '.xml'
-  #  File.delete(path)
-  #  Puppet.debug "firewalld directfile provider: removing (#{path})"
-  #  @destroy_zone = true
-  #  @property_hash.clear
-  #end
 
   def exists?
     puts "EXISTS: #{@property_hash[:name]} / #{@resource[:name]}"
@@ -321,7 +189,7 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
   end
 
   def filename
-    '/etc/firewalld/direct.xml'
+    self.class.filename
   end
 
   # Prefetch xml data.
@@ -365,7 +233,7 @@ Puppet::Type.type(:firewalld_directtest).provide :directprovider do
       firewalld_direct_classvars[:old][:passthroughs] = @property_hash[:passthroughs]
       firewalld_direct_classvars[:num_direct_resources] = 
         resource.catalog.resources.find_all { |x| 
-          x.is_a?(Puppet::Type.type(:firewalld_directtest)) 
+          x.is_a?(Puppet::Type.type(:firewalld_direct)) 
         }.count
     end
     firewalld_direct_classvars[:resources][resource[:name].to_sym] = {} unless firewalld_direct_classvars[:resources][resource[:name].to_sym]
