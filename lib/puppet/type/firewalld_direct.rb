@@ -44,11 +44,28 @@ Puppet::Type.newtype(:firewalld_direct) do
       end
     end
 
-    def should_to_s(s)
-      if s.is_a?(Array)
-        s
+    def is_to_s(currentvalue)
+      if provider.respond_to?(:direct_is_to_s)
+        provider.direct_is_to_s(self.name)
       else
-        [s]
+        super(currentvalue)
+      end
+    end
+
+    def should_to_s(newvalue)
+      if provider.respond_to?(:direct_should_to_s)
+        provider.direct_should_to_s(self.name)
+      else
+        super(newvalue)
+      end
+    end
+
+    def change_to_s(currentvalue, newvalue)
+      if provider.respond_to?(:direct_change_to_s)
+        # In this case we don't need the current and newvalue.  We are caching this inside our provider using a class instance variable
+        provider.direct_change_to_s
+      else
+        super(currentvalue,newvalue)
       end
     end
   end
@@ -105,11 +122,32 @@ Puppet::Type.newtype(:firewalld_direct) do
       end
     end
 
-    def should_to_s(s)
-      if s.is_a?(Array)
-        s
+    def is_to_s(currentvalue)
+      if provider.respond_to?(:direct_is_to_s)
+        puts "IS_TO_S #{self.name} respond_to"
+        provider.direct_is_to_s(self.name)
       else
-        [s]
+        puts "IS_TO_S #{self.name} doesn't respond_to"
+        super(currentvalue)
+      end
+    end
+
+    def should_to_s(newvalue)
+      if provider.respond_to?(:direct_should_to_s)
+        puts "SHOULD_TO_S #{self.name} respond_to"
+        provider.direct_should_to_s(self.name)
+      else
+        puts "SHOULD_TO_S #{self.name} doesn't respond_to"
+        super(newvalue)
+      end
+    end
+
+    def change_to_s(currentvalue, newvalue)
+      if provider.respond_to?(:direct_change_to_s)
+        # In this case we don't need the current and newvalue.  We are caching this inside our provider using a class instance variable
+        provider.direct_change_to_s(self.name)
+      else
+        super(currentvalue,newvalue)
       end
     end
   end
@@ -139,11 +177,28 @@ Puppet::Type.newtype(:firewalld_direct) do
       end
     end
 
-    def should_to_s(s)
-      if s.is_a?(Array)
-        s
+    def is_to_s(currentvalue)
+      if provider.respond_to?(:direct_is_to_s)
+        provider.direct_is_to_s(self.name)
       else
-        [s]
+        super(currentvalue)
+      end
+    end
+
+    def should_to_s(newvalue)
+      if provider.respond_to?(:direct_should_to_s)
+        provider.direct_should_to_s(self.name)
+      else
+        super(newvalue)
+      end
+    end
+
+    def change_to_s(currentvalue, newvalue)
+      if provider.respond_to?(:direct_change_to_s)
+        # In this case we don't need the current and newvalue.  We are caching this inside our provider using a class instance variable
+        provider.direct_change_to_s
+      else
+        super(currentvalue,newvalue)
       end
     end
   end

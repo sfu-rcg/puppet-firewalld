@@ -36,23 +36,108 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     # This will never run
   end
 
+  def direct_is_to_s(property)
+    if (result = firewalld_direct_classvars[:old][property]).empty?
+      ''
+    else
+      result.join("\n")
+    end
+  end
+
+  def direct_should_to_s(property)
+    if (result = firewalld_direct_classvars[:new][property]).empty?
+      ''
+    else
+      result.join("\n")
+    end
+  end
+
+  def direct_change_to_s(property)
+    res_string = "Firewalld_direct\\#{property}\n"
+    results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]
+    # results_from is created to provide us with the ability to tell which resource call likely initiated the change of the resource
+    # this is so that we can report it back to the log/user to make debugging easier
+    # This is our version of change_to_s
+    results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
+    #puts "#{tag} #{results}"
+    removing = []
+    firewalld_direct_classvars[:resources].each do |key,value| 
+      # This provides the resource that most likely initiated the removal of the resource
+      changed_item = results_from & value[property]
+      unless changed_item.empty?
+        # This means something was changed, as in addition as well as removal
+        res_string << "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}\n"
+      end
+      unless removing.include?(results)
+        # This means something was removed and we haven't already mentioned it 
+        # In this scenario we have no way of telling which resource instance the removal came from but that's probably ok
+        res_string << "Firewalld_direct prompted removal of \n#{results.join("\n")}\n"
+        removing << results
+      end
+    end
+    #else
+    #  # Must have found a situation where results is empty, are we adding a rule only?
+    #  # This means that we're adding an item with no removals
+    #  results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
+    #  firewalld_direct_classvars[:resources].each do |key,value| 
+    #    # This provides the resource that most likely initiated the addition of the resource
+    #    changed_item = results_from & value[property]
+    #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}" unless changed_item.empty?
+    #  end
+    #  binding.pry
+    #end
+    res_string
+  end
+
   def remove_items(property, tag, *args)
     puts "REMOVE #{tag}"
+    # This compares our old hashes from the file against what is being provided in the catalog
     if firewalld_direct_classvars[:new][property] != firewalld_direct_classvars[:old][property]
-      results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]
-      results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-      puts "#{tag} #{results}"
-      firewalld_direct_classvars[:resources].each do |key,value| 
-        puts "Firewalld_direct[#{key}] prompted removal of #{results}" unless (results_from & value[property]).empty?
+      # Here we prepare our results of items to remove from property(rules,chains, etc.)
+      if !(results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]).empty?
+        ## results_from is created to provide us with the ability to tell which resource call likely initiated the change of the resource
+        ## this is so that we can report it back to the log/user to make debugging easier
+        ## This is our version of change_to_s
+        #results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
+        #puts "#{tag} #{results}"
+        #removing = []
+        #firewalld_direct_classvars[:resources].each do |key,value| 
+        #  # This provides the resource that most likely initiated the removal of the resource
+        #  changed_item = results_from & value[property]
+        #  unless changed_item.empty?
+        #    # This means something was changed, as in addition as well as removal
+        #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}"
+        #  end
+        #  unless removing.include?(results)
+        #    # This means something was removed and we haven't already mentioned it 
+        #    # In this scenario we have no way of telling which resource instance the removal came from but that's probably ok
+        #    puts "Firewalld_direct prompted removal of \n#{results.join("\n")}"
+        #    removing << results
+        #  end
+        #end
+        ##results_found = firewalld_direct_classvars[:resources].values.map do |res|
+        ##  res.name if res[property].include?(results)
+        ##end
+        results.each do |res|
+          exec_firewall('--direct',"--remove-#{tag}", *args.map { |x| "#{res[x]}" })
+        end
+      #else
+      #  # Must have found a situation where results is empty, are we adding a rule only?
+      #  # This means that we're adding an item with no removals
+      #  results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
+      #  firewalld_direct_classvars[:resources].each do |key,value| 
+      #    # This provides the resource that most likely initiated the addition of the resource
+      #    changed_item = results_from & value[property]
+      #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}" unless changed_item.empty?
+      #  end
+      #  binding.pry
       end
-      results_found = firewalld_direct_classvars[:resources].values.map do |res|
-        res.name if res[property].include?(results)
-      end
-      results.each do |res|
-        exec_firewall('--direct',"--remove-#{tag}", *args.map { |x| "#{res[x]}" })
-      end
+      # We return true even if results doesn't find anything to remove, the fact that we ended up in this IF is because
+      # obviously something was modified that caused this property to notice an inconsistency in the file.
+      # Returning true will ensure that we write the direct file out.
       return true
     end
+    # No differences for property found, return false to ensure this property doesn't trigger a file write.
     return false
   end
 
@@ -209,18 +294,6 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     resources.each do |res, value|
       value.provider = prov.dup
     end
-    #if resource = resources[prov.name]
-    #  resource.provider = prov
-    #  prepare_resources
-    #  # Checking for consistency here so it's not called during `puppet resource` rather only on puppet runs
-    #  #unless prov.consistent?
-    #  #  Puppet.warning("Found IPTables is not consistent with firewalld's zones, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
-    #  #  firewall('--reload')
-    #  #  unless prov.consistent?
-    #  #    raise Puppet::Error("Bad zone XML found, check your zone configuration")
-    #  #  end
-    #  #end
-    #end
   end
 
   def prepare_resources
