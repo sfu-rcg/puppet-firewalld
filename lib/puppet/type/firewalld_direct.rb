@@ -25,9 +25,22 @@ Puppet::Type.newtype(:firewalld_direct) do
       ],
     EOT
 
+    validate do |chain|
+      if chain and not chain.empty?
+        fail("#{chain} is missing required parameter: ipv.") unless chain['ipv']
+        fail("#{chain} is missing required parameter: chain.") unless chain['chain']
+      end
+    end
+
+    munge do |chain|
+      # Here we deal with optional params and add them if they're not specified
+      if chain and not chain.empty?
+        chain['table'] ||= 'filter'
+      end
+      chain
+    end
+
     def insync?(is)
-      #@should = resource.should_content('chains')
-      puts "INSYNC chains:\nIS: #{is}\nSH: #{@should}"
       self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
       if @should.empty? && is == :absent then
         return true
@@ -63,7 +76,7 @@ Puppet::Type.newtype(:firewalld_direct) do
     def change_to_s(currentvalue, newvalue)
       if provider.respond_to?(:direct_change_to_s)
         # In this case we don't need the current and newvalue.  We are caching this inside our provider using a class instance variable
-        provider.direct_change_to_s
+        provider.direct_change_to_s(self.name)
       else
         super(currentvalue,newvalue)
       end
@@ -90,22 +103,24 @@ Puppet::Type.newtype(:firewalld_direct) do
       ],
     EOT
 
-    validate do |val|
-      puts "VALIDATE #{val.inspect}"
-      val = [val] unless val.is_a?(Array)
-      val.each do |rule|
-        if rule and not rule.empty?
-          fail("#{rule} is missing required parameter: ipv.") unless rule['ipv']
-          fail("#{rule} is missing required parameter: table.") unless rule['table']
-          fail("#{rule} is missing required parameter: chain.") unless rule['chain']
-          fail("#{rule} is missing required parameter: args.") unless rule['args']
-        end
+    validate do |rule|
+      if rule and not rule.empty?
+        fail("#{rule} is missing required parameter: ipv.") unless rule['ipv']
+        fail("#{rule} is missing required parameter: chain.") unless rule['chain']
+        fail("#{rule} is missing required parameter: args.") unless rule['args']
       end
     end
 
+    munge do |rule|
+      # Here we deal with optional params and add them if they're not specified
+      if rule and not rule.empty?
+        rule['table'] ||= 'filter'
+        rule['priority'] ||= '0'
+      end
+      rule
+    end
+
     def insync?(is)
-      #@should = resource.should_content('rules')
-      puts "INSYNC rules:\nIS: #{is}\nSH: #{@should}"
       self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
       if @should.empty? && is == :absent then
         return true
@@ -124,20 +139,16 @@ Puppet::Type.newtype(:firewalld_direct) do
 
     def is_to_s(currentvalue)
       if provider.respond_to?(:direct_is_to_s)
-        puts "IS_TO_S #{self.name} respond_to"
         provider.direct_is_to_s(self.name)
       else
-        puts "IS_TO_S #{self.name} doesn't respond_to"
         super(currentvalue)
       end
     end
 
     def should_to_s(newvalue)
       if provider.respond_to?(:direct_should_to_s)
-        puts "SHOULD_TO_S #{self.name} respond_to"
         provider.direct_should_to_s(self.name)
       else
-        puts "SHOULD_TO_S #{self.name} doesn't respond_to"
         super(newvalue)
       end
     end
@@ -153,11 +164,16 @@ Puppet::Type.newtype(:firewalld_direct) do
   end
 
   newproperty(:passthroughs, :array_matching => :all) do
-    desc "Read only attribute. Represents all of the passthroughs from all firewalld_direct resources."
+    desc "Represents all of the passthroughs from all firewalld_direct resources."
+
+    validate do |passthrough|
+      if passthrough and not passthrough.empty?
+        fail("#{passthrough} is missing required parameter: ipv.") unless passthrough['ipv']
+        fail("#{passthrough} is missing required parameter: args.") unless passthrough['args']
+      end
+    end
 
     def insync?(is)
-      #@should = resource.should_content('passthroughs')
-      puts "INSYNC passthroughs:\nIS: #{is}\nSH: #{@should}"
       self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
       if @should.empty? && is == :absent then
         return true
@@ -165,9 +181,6 @@ Puppet::Type.newtype(:firewalld_direct) do
       @should = @should.uniq
       @should = @should.flatten
 
-
-      puts "#{is.length} - #{@should.length}"
-      puts "#{is == @should} - #{is == @should.map(&:to_s)}"
       if match_all? then
         return false unless is.is_a? Array
         return false unless is.length == @should.length
@@ -196,7 +209,7 @@ Puppet::Type.newtype(:firewalld_direct) do
     def change_to_s(currentvalue, newvalue)
       if provider.respond_to?(:direct_change_to_s)
         # In this case we don't need the current and newvalue.  We are caching this inside our provider using a class instance variable
-        provider.direct_change_to_s
+        provider.direct_change_to_s(self.name)
       else
         super(currentvalue,newvalue)
       end
@@ -215,5 +228,33 @@ Puppet::Type.newtype(:firewalld_direct) do
       end
     end
     ipset_arr
+  end
+
+  def should_content(property_type)
+    # This method is used from inside the provider if needed in order to create the file if it doesn't exist
+    # Should be rarely called but is required to exist.
+    gen_resource = instance_variable_get("@generated_" + property_type)
+    return gen_resource if gen_resource
+    @generated_chains = {}
+    @generated_rules = {}
+    @generated_passthroughs = {}
+    direct_chains = []
+    direct_rules = []
+    direct_passthroughs = []
+
+    resources = catalog.resources.select do |r|
+      r.is_a?(Puppet::Type.type(:firewalld_direct))
+    end
+
+    resources.each do |r|
+      @generated_chains[r.name] = r[:chains] if r[:chains]
+      @generated_rules[r.name] = r[:rules] if r[:rules]
+      @generated_passthroughs[r.name] = r[:passthroughs] if r[:passthroughs]
+    end
+
+    # This should return the instance variable for whatever called it
+    # Should really only get to this point the first time around as we set all instance variables during one run
+    # The rest of the calls to this method should return on the second line which contains the return if not undef
+    instance_variable_get("@generated_" + property_type)
   end
 end

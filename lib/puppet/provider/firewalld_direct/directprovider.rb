@@ -1,5 +1,4 @@
 require 'puppet'
-require 'pry'
 require 'puppetx/firewalld/direct'
 require File.expand_path(File.join(File.dirname(__FILE__), '..', 'firewalld'))
 require 'rexml/document'
@@ -12,9 +11,93 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
   commands :firewall => 'firewall-cmd'
   commands :iptables => 'iptables'
 
-  attr_accessor :destroy_zone
-
   include PuppetX::Firewalld::Direct
+
+  class << self
+
+    def instances
+      # We do not want any instances in this resource as it's a combiner
+      []
+    end
+
+    def filename
+      '/etc/firewalld/direct.xml'
+    end
+
+    # Prefetch xml data.
+    def prefetch(resources)
+      prov = parse_directfile
+      Puppet.debug "firewalld prefetch instance resource: (#{prov.name})"
+      resources.each do |res, value|
+        value.provider = prov.dup
+      end
+    end
+
+    def parse_directfile
+      debug "[instances]"
+
+      if File.exist?(filename)
+        begin
+          doc = REXML::Document.new File.read(filename)
+          chains = []
+          rules = []
+          passthroughs = []
+
+          # Loop through the zone elements
+          doc.elements.each("direct/*") do |e|
+
+            if e.name == 'chain'
+              chains << {
+                'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes["ipv"],
+                'table' => e.attributes["table"].nil? ? nil : e.attributes["table"],
+                'chain' => e.attributes["chain"].nil? ? nil : e.attributes["chain"],
+              }
+            end
+            if e.name == 'rule'
+              rules << {
+                'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes['ipv'],
+                'table' => e.attributes["table"].nil? ? nil : e.attributes["table"],
+                'chain' => e.attributes["chain"].nil? ? nil : e.attributes["chain"],
+                'priority' => e.attributes["priority"].nil? ? nil : e.attributes["priority"],
+                'args' => e.text.nil? ? nil : e.text,
+              }
+            end
+            if e.name == 'passthrough'
+              passthroughs << {
+                'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes['ipv'],
+                'args' => e.elements[0].nil? ? nil : e.elements[0],
+              }
+            end
+
+          end
+
+          new({
+            :name          => 'direct',
+            :ensure        => :present,
+            :chains        => chains.nil? ? nil : chains,
+            :rules         => rules.nil? ? nil : rules,
+            :passthroughs  => passthroughs.nil? ? nil : passthroughs,
+          })
+        rescue REXML::ParseException
+          Puppet.warning("firewalld_direct, #{filename} had malformed XML, your direct rules may now be out of sync until you manually restart firewalld service")
+          blank_file
+        end
+      else
+        blank_file
+      end
+    end
+
+    def blank_file
+      new({
+        :name          => 'direct',
+        :ensure        => :absent,
+        :chains        => nil,
+        :rules         => nil,
+        :passthroughs  => nil,
+      })
+    end
+
+  end # End of self class
 
   def firewalld_direct_classvars
     self.class.firewalld_direct_classvars
@@ -24,16 +107,41 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     self.class.firewalld_direct_classvars = *args
   end
 
+  def create_helper(property, key, should)
+    resource[:name] = key
+    resource[property] = should
+    process_property(property)
+  end
+
   def create
-    # This should never run since we always return true in exists?.
-    Puppet.debug('firewalld_direct, why are we running create???')
-    send("chains=", resource.should_content('chains'))
-    send("rules=", resource.should_content('rules'))
-    send("passthroughs=", resource.should_content('passthroughs'))
+    Puppet.debug("firewalld_direct, #{filename} had an issue, this is bad, we will recreate it but head the warning")
+    chains_val = resource.should_content('chains')
+    rules_val = resource.should_content('rules')
+    passthroughs_val = resource.should_content('passthroughs')
+
+    run_count = firewalld_direct_classvars[:num_runs] - 1
+    create_helper(
+                  :chains,
+                  chains_val.keys[run_count], 
+                  chains_val.values[run_count]
+                 )
+    create_helper(
+                  :rules,
+                  rules_val.keys[run_count], 
+                  rules_val.values[run_count]
+                 )
+    create_helper(
+                  :passthroughs,
+                  passthroughs_val.keys[run_count], 
+                  passthroughs_val.values[run_count]
+                 )
+
+
   end
 
   def destroy
-    # This will never run
+    # We don't do anything if they mark ensure as absent because we don't want to delete the file and once they manage a 
+    # single resource of this type we purge any unmanaged rules(not optional as of current)
   end
 
   def direct_is_to_s(property)
@@ -57,16 +165,13 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]
     # results_from is created to provide us with the ability to tell which resource call likely initiated the change of the resource
     # this is so that we can report it back to the log/user to make debugging easier
-    # This is our version of change_to_s
     results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-    #puts "#{tag} #{results}"
     removing = []
     firewalld_direct_classvars[:resources].each do |key,value| 
       # This provides the resource that most likely initiated the removal of the resource
       changed_item = results_from & value[property]
       unless changed_item.empty?
-        # This means something was changed, as in addition as well as removal
-        res_string << "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}\n"
+        res_string << "Firewalld_direct[#{key}] prompted addition of \n#{changed_item.join("\n")}\n"
       end
       unless removing.include?(results)
         # This means something was removed and we haven't already mentioned it 
@@ -75,62 +180,21 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
         removing << results
       end
     end
-    #else
-    #  # Must have found a situation where results is empty, are we adding a rule only?
-    #  # This means that we're adding an item with no removals
-    #  results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-    #  firewalld_direct_classvars[:resources].each do |key,value| 
-    #    # This provides the resource that most likely initiated the addition of the resource
-    #    changed_item = results_from & value[property]
-    #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}" unless changed_item.empty?
-    #  end
-    #  binding.pry
-    #end
     res_string
   end
 
   def remove_items(property, tag, *args)
-    puts "REMOVE #{tag}"
     # This compares our old hashes from the file against what is being provided in the catalog
     if firewalld_direct_classvars[:new][property] != firewalld_direct_classvars[:old][property]
       # Here we prepare our results of items to remove from property(rules,chains, etc.)
       if !(results = firewalld_direct_classvars[:old][property] - firewalld_direct_classvars[:new][property]).empty?
-        ## results_from is created to provide us with the ability to tell which resource call likely initiated the change of the resource
-        ## this is so that we can report it back to the log/user to make debugging easier
-        ## This is our version of change_to_s
-        #results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-        #puts "#{tag} #{results}"
-        #removing = []
-        #firewalld_direct_classvars[:resources].each do |key,value| 
-        #  # This provides the resource that most likely initiated the removal of the resource
-        #  changed_item = results_from & value[property]
-        #  unless changed_item.empty?
-        #    # This means something was changed, as in addition as well as removal
-        #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}"
-        #  end
-        #  unless removing.include?(results)
-        #    # This means something was removed and we haven't already mentioned it 
-        #    # In this scenario we have no way of telling which resource instance the removal came from but that's probably ok
-        #    puts "Firewalld_direct prompted removal of \n#{results.join("\n")}"
-        #    removing << results
-        #  end
-        #end
-        ##results_found = firewalld_direct_classvars[:resources].values.map do |res|
-        ##  res.name if res[property].include?(results)
-        ##end
+        # We have to run this rule removal because currently in firewall-cmd --version =~ /0.3.9/ a --reload doesn't remove rules
         results.each do |res|
-          exec_firewall('--direct',"--remove-#{tag}", *args.map { |x| "#{res[x]}" })
+          # We run the rule removal unless for some reason we have a nil value found in the direct.xml attributes
+          # In that case the rule cannot exist in IPTables and the preceding file write and `firewall-cmd --reload` will take care of it
+          args_to_run = *args.map { |x| "#{res[x]}" }
+          exec_firewall('--direct',"--remove-#{tag}", args_to_run) unless args_to_run.include?("")
         end
-      #else
-      #  # Must have found a situation where results is empty, are we adding a rule only?
-      #  # This means that we're adding an item with no removals
-      #  results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-      #  firewalld_direct_classvars[:resources].each do |key,value| 
-      #    # This provides the resource that most likely initiated the addition of the resource
-      #    changed_item = results_from & value[property]
-      #    puts "Firewalld_direct[#{key}] prompted adding of \n#{changed_item.join("\n")}" unless changed_item.empty?
-      #  end
-      #  binding.pry
       end
       # We return true even if results doesn't find anything to remove, the fact that we ended up in this IF is because
       # obviously something was modified that caused this property to notice an inconsistency in the file.
@@ -154,8 +218,6 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
   end
 
   def chains
-    puts "CHAINS GETTER #{firewalld_direct_classvars[:old][:chains]} - #{firewalld_direct_classvars[:new][:chains]}"
-    puts "CHAINS GETTER Run: #{firewalld_direct_classvars[:num_runs]} Total: #{firewalld_direct_classvars[:num_direct_resources]}"
     process_property(:chains)
   end
 
@@ -180,8 +242,11 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
   end
 
   def process_property(property)
+    # This method will just build up the hashes until last run of this resource type is complete
+    # Once last run is complete it fires off the change, if there is any, so that flush gets called
     firewalld_direct_classvars[:resources][resource[:name].to_sym].merge!({ property => resource[property] })
     firewalld_direct_classvars[:new][property] << resource[property]
+
     if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
       if firewalld_direct_classvars[:new][property] != firewalld_direct_classvars[:old][property]
         firewalld_direct_classvars[:new][property].flatten!.uniq!
@@ -198,16 +263,24 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     # We do not allow flushing until all resources of this type have been processed
     # This is because we're writing to a single file and need to know the state the whole time
     if firewalld_direct_classvars[:num_runs] == firewalld_direct_classvars[:num_direct_resources]
-      r_bool = remove_rules
-      p_bool = remove_passthroughs
+      r_bool = remove_rules if firewalld_direct_classvars[:old][:rules]
+      p_bool = remove_passthroughs if firewalld_direct_classvars[:old][:passthroughs]
       # Chains have to be removed last
-      c_bool = remove_chains
-      write_directfile if c_bool or r_bool or p_bool
+      c_bool = remove_chains if firewalld_direct_classvars[:old][:chains]
+      write_directfile
     end
   end
 
   def write_directfile
     Puppet.debug "firewalld directfile provider: write_directfile (#{@resource[:name]})"
+
+    # Throw alert (non-run breaking) that the direct.xml file was missing and rules may be inconsistent
+    # The direct.xml file should never be missing and this causes us to be unable to check what has changed
+    alert("#{filename} was missing and shouldn't have been!\nWe suggest looking for system issues or compromises. 
+          We have recreated the file and ran a `firewall-cmd --reload` but in certain versions of 
+          firewalld that does not fully reload purge/add direct rules, we suggest manually running service 
+          restart of firewalld, this will likely drop current connections") unless File.exist?(filename)
+
     doc = REXML::Document.new
     zone = doc.add_element 'direct'
     doc << REXML::XMLDecl.new(version='1.0',encoding='utf-8')
@@ -257,49 +330,24 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     firewall(args)
   end
 
-  def self.instances
-    # We do not want any instances in this resource as it's a combiner
-    []
-  end
-
   def exists?
-    puts "EXISTS: #{@property_hash[:name]} / #{@resource[:name]}"
     prepare_resources
-    #@property_hash[:ensure] == :present || false
-    true
-  end
-
-  def self.filename
-    '/etc/firewalld/direct.xml'
+    # We only check to see if the file doesn't exist, not if they want it to go away using :absent themselves
+    @property_hash[:ensure] != :absent
   end
 
   def filename
     self.class.filename
   end
 
-  # Prefetch xml data.
-  # This prefetch is special to zonefile as it does consistency checking
-  def self.prefetch(resources)
-    Puppet.debug "firewalld prefetch instance: #{instances}"
-    prov = parse_directfile
-    puts "PROV: #{prov}"
-    puts "PROV: #{prov.inspect}"
-    #@property_hash = prov
-    #parse_directfile.each do |prov|
-    Puppet.debug "firewalld prefetch instance resource: (#{prov.name})"
-    Puppet.debug "firewalld prefetch instance resource: (#{resources[prov.name]})"
-    Puppet.debug "firewalld prefetch instance resource: (#{resources.keys})"
-    #prepare_resources
-    #if resource = resources[prov.name]
-    resources.each do |res, value|
-      value.provider = prov.dup
-    end
+  def run_increment
+    firewalld_direct_classvars[:num_runs] += 1
+    firewalld_direct_classvars[:resources][resource[:name].to_sym] = {} unless firewalld_direct_classvars[:resources][resource[:name].to_sym]
   end
 
   def prepare_resources
-    puts "Prefetch #{firewalld_direct_classvars}"
-    puts "Prefetch #{@property_hash[:chains]}"
-    firewalld_direct_classvars[:num_runs] += 1
+    # This method builds our classvar full of the IS values from our prefetch file and records total resources of its type on first call
+    # On subsequent calls it just increments the counter so that our later methods will know when to actually fire off their actions
     if firewalld_direct_classvars[:num_direct_resources] == 0
       firewalld_direct_classvars[:old][:chains] = @property_hash[:chains]
       firewalld_direct_classvars[:old][:rules] = @property_hash[:rules]
@@ -309,125 +357,7 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
           x.is_a?(Puppet::Type.type(:firewalld_direct)) 
         }.count
     end
-    firewalld_direct_classvars[:resources][resource[:name].to_sym] = {} unless firewalld_direct_classvars[:resources][resource[:name].to_sym]
-    puts "Prefetch #{firewalld_direct_classvars}"
-  end
-
-  def consistent?
-    iptables_allow = []
-    iptables_deny = []
-    firewallcmd_accept = []
-    firewallcmd_deny = []
-    begin
-      iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
-      iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
-    rescue
-    end
-
-    begin
-      iptables_deny = iptables('-L', "IN_#{@resource[:name]}_deny", '-n').split("\n")
-      iptables_deny.delete_if { |val| ! val.start_with?("DROP", "REJECT") }
-    rescue
-    end
-
-    begin
-      firewallcmd = firewall("--zone=#{@resource[:name]}", '--list-all').split("\n")
-      firewallcmd.select! { |val| /\srule family/ =~ val }
-      firewallcmd_exp = firewallcmd.map do |val| 
-        arr = []
-        if /service name=\"(.*?)\"/ =~ val 
-          if service_ports = read_service_ports($1)
-            service_ports.each do |port|
-              arr << val.sub(/(service name=\".*?\")/, "\\1 port=#{port}")
-            end
-          end
-        end
-        arr.empty? ? val : arr
-      end
-
-      firewallcmd_exp.flatten!
-
-      firewallcmd_accept = firewallcmd_exp.select { |val| /accept\Z/ =~ val }
-      firewallcmd_deny = firewallcmd_exp.select { |val| /reject\Z|drop\Z/ =~ val }
-    rescue
-    end
-
-
-    unless iptables_allow.count == firewallcmd_accept.count && iptables_deny.count == firewallcmd_deny.count
-      Puppet.debug("Consistency issue between iptables and firewalld zone #{@property_hash[:name]}:\niptables_allow.count: #{iptables_allow.count}\nfirewallcmd_accept.count: #{firewallcmd_accept.count}\niptables_deny.count: #{iptables_deny.count}\nfirewallcmd_deny.count: #{firewallcmd_deny.count}")
-    end
-
-    # Technically the IPTables allow list and the firewallcmd_accept list(as well as deny lists) numbering lines up 
-    # and we could do a regex comparison to verify that the EXACT values existed if we wanted to iptables_allow[index] =~ /...firewallcmd_accept[index].../ for example
-    iptables_allow.count == firewallcmd_accept.count && iptables_deny.count == firewallcmd_deny.count
-  end
-  
-  def read_service_ports(service_name)
-    file = if File.exist?("/etc/firewalld/services/#{service_name}.xml")
-             File.open("/etc/firewalld/services/#{service_name}.xml")
-           elsif File.exist?("/usr/lib/firewalld/services/#{service_name}.xml") 
-             File.open("/usr/lib/firewalld/services/#{service_name}.xml")
-           end
-    return false unless file
-    doc = REXML::Document.new(file)
-    ports = []
-    doc.root.elements.each("port") do |ele| 
-      ports << "#{ele.attributes["port"]}/#{ele.attributes["protocol"]}" 
-    end
-    file.close 
-    ports
-  end
-
-  def self.parse_directfile
-    debug "[instances]"
-
-    doc = REXML::Document.new File.read(filename)
-    chains = []
-    rules = []
-    passthroughs = []
-
-    # Set zone level variables
-    root = doc.root
-    # Go to next file if there is not a doc.root
-    #if ! root
-    #  next
-    #end
-
-    # Loop through the zone elements
-    doc.elements.each("direct/*") do |e|
-
-      if e.name == 'chain'
-        chains << {
-          'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes["ipv"],
-          'table' => e.attributes["table"].nil? ? nil : e.attributes["table"],
-          'chain' => e.attributes["chain"].nil? ? nil : e.attributes["chain"],
-        }
-      end
-      if e.name == 'rule'
-        rules << {
-          'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes['ipv'],
-          'table' => e.attributes["table"].nil? ? nil : e.attributes["table"],
-          'chain' => e.attributes["chain"].nil? ? nil : e.attributes["chain"],
-          'priority' => e.attributes["priority"].nil? ? nil : e.attributes["priority"],
-          'args' => e.text.nil? ? nil : e.text,
-        }
-      end
-      if e.name == 'passthrough'
-        passthroughs << {
-          'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes['ipv'],
-          'args' => e.elements[0].nil? ? nil : e.elements[0],
-        }
-      end
-
-    end
-
-    new({
-      :name          => 'direct',
-      :ensure        => :present,
-      :chains        => chains.nil? ? nil : chains,
-      :rules         => rules.nil? ? nil : rules,
-      :passthroughs  => passthroughs.nil? ? nil : passthroughs,
-    })
+    run_increment
   end
 
 end

@@ -9,7 +9,7 @@ define firewalld::direct_rules(
     chains       => $chains,
     rules        => $rules,
     passthroughs => $passthroughs,
-    notify       => Exec['firewalld::reload'],
+    notify       => [ File['/etc/firewalld/direct.xml'], Exec['firewalld::reload'] ],
   }
 }
 
