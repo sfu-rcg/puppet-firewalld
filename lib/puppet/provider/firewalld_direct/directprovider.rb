@@ -9,7 +9,6 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
   @doc = "The direct rule config manipulator"
 
   commands :firewall => 'firewall-cmd'
-  commands :iptables => 'iptables'
 
   include PuppetX::Firewalld::Direct
 
@@ -34,8 +33,6 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     end
 
     def parse_directfile
-      debug "[instances]"
-
       if File.exist?(filename)
         begin
           doc = REXML::Document.new File.read(filename)
@@ -166,18 +163,18 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     # results_from is created to provide us with the ability to tell which resource call likely initiated the change of the resource
     # this is so that we can report it back to the log/user to make debugging easier
     results_from = firewalld_direct_classvars[:new][property] - firewalld_direct_classvars[:old][property]
-    removing = []
+    already_removed = []
     firewalld_direct_classvars[:resources].each do |key,value| 
       # This provides the resource that most likely initiated the removal of the resource
       changed_item = results_from & value[property]
       unless changed_item.empty?
         res_string << "Firewalld_direct[#{key}] prompted addition of \n#{changed_item.join("\n")}\n"
       end
-      unless removing.include?(results)
+      if (not results.empty?) && (not already_removed.include?(results))
         # This means something was removed and we haven't already mentioned it 
         # In this scenario we have no way of telling which resource instance the removal came from but that's probably ok
         res_string << "Firewalld_direct prompted removal of \n#{results.join("\n")}\n"
-        removing << results
+        already_removed << results
       end
     end
     res_string

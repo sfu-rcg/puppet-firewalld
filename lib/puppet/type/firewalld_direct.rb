@@ -1,7 +1,25 @@
-require 'puppet/util/checksums'
-
 Puppet::Type.newtype(:firewalld_direct) do
   @doc = "Gets all the direct rule fragments and puts these into the direct.xml file."
+
+  class << self
+
+    #Method for testing Array type attribute equality
+    define_method(:array_insync?) do |calling_method, is, should|
+      calling_method.devfail "#{calling_method.class.name}'s should is not array" unless should.is_a?(Array)
+      if should.empty? && is == :absent then
+        return true
+      end
+      should = should.flatten.uniq
+
+      if calling_method.match_all? then
+        return false unless is.is_a? Array
+        return false unless is.length == should.length
+        return (is == should or is == should.map(&:to_s))
+      else
+        return should.any? {|want| property_matches?(is, want) }
+      end
+    end
+  end # End of self
 
   ensurable do
     defaultvalues
@@ -41,20 +59,7 @@ Puppet::Type.newtype(:firewalld_direct) do
     end
 
     def insync?(is)
-      self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
-      if @should.empty? && is == :absent then
-        return true
-      end
-      @should = @should.uniq
-      @should = @should.flatten
-
-      if match_all? then
-        return false unless is.is_a? Array
-        return false unless is.length == @should.length
-        return (is == @should or is == @should.map(&:to_s))
-      else
-        return @should.any? {|want| property_matches?(is, want) }
-      end
+      Puppet::Type::Firewalld_direct.array_insync?(self, is, should)
     end
 
     def is_to_s(currentvalue)
@@ -121,20 +126,7 @@ Puppet::Type.newtype(:firewalld_direct) do
     end
 
     def insync?(is)
-      self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
-      if @should.empty? && is == :absent then
-        return true
-      end
-      @should = @should.uniq
-      @should = @should.flatten
-
-      if match_all? then
-        return false unless is.is_a? Array
-        return false unless is.length == @should.length
-        return (is == @should or is == @should.map(&:to_s))
-      else
-        return @should.any? {|want| property_matches?(is, want) }
-      end
+      Puppet::Type::Firewalld_direct.array_insync?(self, is, should)
     end
 
     def is_to_s(currentvalue)
@@ -174,20 +166,7 @@ Puppet::Type.newtype(:firewalld_direct) do
     end
 
     def insync?(is)
-      self.devfail "#{self.class.name}'s should is not array" unless @should.is_a?(Array)
-      if @should.empty? && is == :absent then
-        return true
-      end
-      @should = @should.uniq
-      @should = @should.flatten
-
-      if match_all? then
-        return false unless is.is_a? Array
-        return false unless is.length == @should.length
-        return (is == @should or is == @should.map(&:to_s))
-      else
-        return @should.any? {|want| property_matches?(is, want) }
-      end
+      Puppet::Type::Firewalld_direct.array_insync?(self, is, should)
     end
 
     def is_to_s(currentvalue)
