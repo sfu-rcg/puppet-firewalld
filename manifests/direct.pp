@@ -80,15 +80,12 @@ class firewalld::direct(
   $rules = [],
   $passthroughs = [],
 ) {
-  include ::firewalld::configuration
-
-  file {
-  '/etc/firewalld/direct.xml':
-    content => template('firewalld/direct.xml.erb'),
-    owner   => root,
-    group   => root,
-    mode    => '0644',
-    require => Package['firewalld'],
-    notify  => Exec['firewalld::reload'], # reload service
+  # When this module was initially created it used this class to deploy direct rules with no defined type
+  # We've kept this and modified it to call a defined type to avoid breaking anyone's current usage of this class
+  # This forwards their current singular call off to our new defined type and type/provider method
+  firewalld::direct_rules { 'firewalld::direct':
+    chains       => $chains,
+    rules        => $rules,
+    passthroughs => $passthroughs,
   }
 }
