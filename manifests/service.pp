@@ -55,8 +55,8 @@ define firewalld::service(
   $destination = {},
 ) {
 
-  include firewalld::service::base
-  include firewalld::configuration
+  include ::firewalld::service::base
+  include ::firewalld::configuration
 
   file { "/etc/firewalld/services/${name}.xml":
     content => template('firewalld/service.xml.erb'),
@@ -64,6 +64,6 @@ define firewalld::service(
     group   => root,
     mode    => '0644',
     require => Package['firewalld'],
-    notify  => Service['firewalld'],
+    notify  => Exec['firewalld::reload'], # reload service
   }
 }

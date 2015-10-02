@@ -50,11 +50,11 @@ class firewalld::lockdown_whitelist(
   $commands = [],
   $users = [],
 ) {
-  include firewalld::configuration
+  include ::firewalld::configuration
 
-  if $users != [] {
-    # TODO: assert there's one (and only one of) {username, userid}
-  }
+#  if $users != [] {
+#    # TODO: assert there's one (and only one of) {username, userid}
+#  }
 
   file {
     '/etc/firewalld/lockdown-whitelist.xml':
@@ -63,6 +63,6 @@ class firewalld::lockdown_whitelist(
       group   => root,
       mode    => '0644',
       require => Package['firewalld'],
-      notify  => Service['firewalld'],
+      notify  => Exec['firewalld::reload'], # reload service
   }
 }
