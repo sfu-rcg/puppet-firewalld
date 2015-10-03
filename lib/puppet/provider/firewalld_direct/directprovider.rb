@@ -323,7 +323,10 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
   def exec_firewall(*extra_args)
     args=[]
     args << extra_args
-    args.flatten!.map! { |x| x.split(' ') }.flatten!
+    # Puppet has a bug, it seems, where the command not function if there are spaces in a string passed to the commands method
+    # such as firewall('--list-all', '--zone zonename')  That second array item with a space would cause the command to 
+    # return back saying unrecognized command even though it looks like it submitted it correctly, so we array every word.
+    args = args.flatten.map { |x| x.include?(' ') ? x.split(' ') : x }.flatten
     firewall(args)
   end
 
