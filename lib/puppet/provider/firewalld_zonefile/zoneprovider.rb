@@ -265,14 +265,33 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
   end
 
   def consistent?
-    default_zone = firewall("--get-default-zone").chomp
-    if default_zone != @resource[:name]
-      return true
-    end
     iptables_allow = []
     iptables_deny = []
     firewallcmd_accept = []
     firewallcmd_deny = []
+
+    # We will check to see if the zone exists in INPUT_ZONES or INPUT_ZONES_SOURCE first
+    # if it doesn't exist then it most likely isn't active(doesn't have any interfaces assigned to it) 
+    # We shouldn't be doing a consistency check against zones that aren't in use.
+    begin
+      iptables_zones_source = iptables('-L', 'INPUT_ZONES_SOURCE', '-n').split("\n")
+      iptables_zones_source.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
+    rescue
+      # If we have to rescue here then it's likely not something we should be dealing with local to this method
+      # such as iptables not existing or firewalld not being loaded yet, should never happen.
+      return true
+    end
+    begin
+      iptables_zones = iptables('-L', 'INPUT_ZONES', '-n').split("\n")
+      iptables_zones.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
+    rescue
+      # If we have to rescue here then it's likely not something we should be dealing with local to this method
+      # such as iptables not existing or firewalld not being loaded yet, should never happen.
+      return true
+    end
+    # We return true here if the zone isn't in use
+    return true if iptables_zones_source.empty? and iptables_zones.empty?
+
     begin
       iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
       iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
