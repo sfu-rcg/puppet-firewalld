@@ -269,6 +269,29 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
     iptables_deny = []
     firewallcmd_accept = []
     firewallcmd_deny = []
+
+    # We will check to see if the zone exists in INPUT_ZONES or INPUT_ZONES_SOURCE first
+    # if it doesn't exist then it most likely isn't active(doesn't have any interfaces assigned to it) 
+    # We shouldn't be doing a consistency check against zones that aren't in use.
+    begin
+      iptables_zones_source = iptables('-L', 'INPUT_ZONES_SOURCE', '-n').split("\n")
+      iptables_zones_source.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
+    rescue
+      # If we have to rescue here then it's likely not something we should be dealing with local to this method
+      # such as iptables not existing or firewalld not being loaded yet, should never happen.
+      return true
+    end
+    begin
+      iptables_zones = iptables('-L', 'INPUT_ZONES', '-n').split("\n")
+      iptables_zones.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
+    rescue
+      # If we have to rescue here then it's likely not something we should be dealing with local to this method
+      # such as iptables not existing or firewalld not being loaded yet, should never happen.
+      return true
+    end
+    # We return true here if the zone isn't in use
+    return true if iptables_zones_source.empty? and iptables_zones.empty?
+
     begin
       iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
       iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
@@ -283,6 +306,11 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
 
     begin
       firewallcmd = firewall("--zone=#{@resource[:name]}", '--list-all').split("\n")
+      services = firewallcmd.select { |val| /services:/ =~ val }.map do |val|
+        # HACK: dhcpv6-client is ipv6 only and we check ipv4 iptables only
+        val.sub('services:','').sub('dhcpv6-client','').split(" ").map{|service| read_service_ports(service)}
+      end
+
       firewallcmd.select! { |val| /\srule family/ =~ val }
       firewallcmd_exp = firewallcmd.map do |val| 
         arr = []
@@ -295,22 +323,18 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
         end
         arr.empty? ? val : arr
       end
-
       firewallcmd_exp.flatten!
-
       firewallcmd_accept = firewallcmd_exp.select { |val| /accept\Z/ =~ val }
       firewallcmd_deny = firewallcmd_exp.select { |val| /reject\Z|drop\Z/ =~ val }
     rescue
     end
-
-
-    unless iptables_allow.count == firewallcmd_accept.count && iptables_deny.count == firewallcmd_deny.count
-      Puppet.debug("Consistency issue between iptables and firewalld zone #{@property_hash[:name]}:\niptables_allow.count: #{iptables_allow.count}\nfirewallcmd_accept.count: #{firewallcmd_accept.count}\niptables_deny.count: #{iptables_deny.count}\nfirewallcmd_deny.count: #{firewallcmd_deny.count}")
+    unless iptables_allow.count == (services.flatten.count + firewallcmd_accept.count) && iptables_deny.count == firewallcmd_deny.count
+      Puppet.debug("Consistency issue between iptables and firewalld zone #{@property_hash[:name]}:\niptables_allow.count: #{iptables_allow.count}\nfirewallcmd_accept.count: #{firewallcmd_accept.count}\nservices count: #{services.flatten.count}\niptables_deny.count: #{iptables_deny.count}\nfirewallcmd_deny.count: #{firewallcmd_deny.count}")
     end
 
     # Technically the IPTables allow list and the firewallcmd_accept list(as well as deny lists) numbering lines up 
     # and we could do a regex comparison to verify that the EXACT values existed if we wanted to iptables_allow[index] =~ /...firewallcmd_accept[index].../ for example
-    iptables_allow.count == firewallcmd_accept.count && iptables_deny.count == firewallcmd_deny.count
+    iptables_allow.count == (services.flatten.count + firewallcmd_accept.count) && iptables_deny.count == firewallcmd_deny.count
   end
   
   def read_service_ports(service_name)
