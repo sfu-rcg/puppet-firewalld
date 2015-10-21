@@ -74,6 +74,19 @@ class firewalld::configuration (
     group   => root,
     mode    => '0640',
     require => Package['firewalld'], # make sure package is installed
-    notify  => Exec['firewalld::reload'], # reload service
+    notify  => Exec['firewalld::reload_bugfix'], # reload_bugfix, see note in init.pp
+    subscribe => Exec['firewalld::reload'], # this should become the notify value after that said bug is fixed someday 
+  }
+
+  # Oct 20-2015
+  # This bugfix exec is due to a bug which occurs if you add a new zone file into /etc/firewalld/zones/ and change the
+  # /etc/firewalld/firewalld.conf DefaultZone value to match the new zone without doing a `firewall-cmd --reload`
+  # in the middle of it.  Firewalld fails if the zone file is made/'added' during the same --reload as the DefaultZone change
+  # to point to it. Without this second --reload it would cause your iptables zone policies to all change to 'policy DROP'
+  # If you turn --debug=2 on inside /etc/sysconfig/firewalld FIREWALLD_ARGS you will see the failure inside of /var/log/firewalld
+  exec{ 'firewalld::reload_bugfix':
+    path        =>'/usr/bin:/bin',
+    command     => 'firewall-cmd --reload',
+    refreshonly => true,
   }
 }
