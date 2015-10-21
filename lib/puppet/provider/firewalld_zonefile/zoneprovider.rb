@@ -257,7 +257,7 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
           Puppet.warning("Found IPTables is not consistent with firewalld's zones, we will reload firewalld to attempt to restore consistency.  If this doesn't fix it, you must have a bad zone XML")
           firewall('--reload')
           unless prov.consistent?
-            raise Puppet::Error("Bad zone XML found, check your zone configuration")
+            raise Puppet::Error, "Bad zone XML found, check your zone configuration"
           end
         end
       end
