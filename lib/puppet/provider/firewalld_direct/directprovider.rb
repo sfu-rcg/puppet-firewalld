@@ -56,13 +56,13 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
                 'table' => e.attributes["table"].nil? ? nil : e.attributes["table"],
                 'chain' => e.attributes["chain"].nil? ? nil : e.attributes["chain"],
                 'priority' => e.attributes["priority"].nil? ? nil : e.attributes["priority"],
-                'args' => e.text.nil? ? nil : e.text,
+                'args' => e.text.nil? ? nil : e.text.strip.gsub(/[[:space:]]+/, ' '),
               }
             end
             if e.name == 'passthrough'
               passthroughs << {
                 'ipv' => e.attributes["ipv"].nil? ? nil : e.attributes['ipv'],
-                'args' => e.elements[0].nil? ? nil : e.elements[0],
+                'args' => e.elements[0].nil? ? nil : e.elements[0].strip.gsub(/[[:space:]]+/, ' '),
               }
             end
 
