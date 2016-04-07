@@ -120,7 +120,8 @@ Puppet::Type.newtype(:firewalld_direct) do
       # Here we deal with optional params and add them if they're not specified
       if rule and not rule.empty?
         rule['table'] ||= 'filter'
-        rule['priority'] ||= '0'
+        rule['priority'] = rule['priority'] ? rule['priority'].to_s : '0'
+        rule['args'] = rule['args'].strip.gsub(/[[:space:]]+/, ' ')
       end
       rule
     end
