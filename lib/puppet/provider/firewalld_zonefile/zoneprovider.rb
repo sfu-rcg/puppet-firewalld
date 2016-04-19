@@ -207,7 +207,8 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
     file = File.open(path, "w+")
     fmt = REXML::Formatters::Pretty.new
     fmt.compact = true
-    fmt.width = 1000
+    # Here, width breaks stuff, so let's omit it
+    #fmt.width = 1000
     fmt.write(doc, file)
     file.close
     Puppet.debug "firewalld zonefile provider: Changes to #{path} configuration saved to disk."
