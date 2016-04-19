@@ -313,6 +313,7 @@ Puppet::Type.type(:firewalld_direct).provide :directprovider do
     file = File.open(filename, "w+")
     fmt = REXML::Formatters::Pretty.new
     fmt.compact = true
+    fmt.width = 1000
     fmt.write(doc, file)
     file.close
     Puppet.debug "firewalld directfile provider: Changes to #{filename} configuration saved to disk."
