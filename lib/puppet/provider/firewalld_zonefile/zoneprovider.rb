@@ -8,11 +8,20 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
   @doc = "The zone config manipulator"
 
   commands :firewall => 'firewall-cmd'
-  commands :iptables => 'iptables'
+  commands :ip4tables => 'iptables'
+  commands :ip6tables => 'ip6tables'
 
   attr_accessor :destroy_zone
 
   mk_resource_methods
+
+  def iptables(*args)
+    (ip4tables(*args) + ip6tables(*args)).split("\n").reject { |line|
+      # Remove lines having source and destination '::/0' because they should also
+      # be in the v4 list and would count double ...
+      line.match(/ ::\/0 +::\/0 /)
+    }
+  end
 
   def flush
     Puppet.debug "firewalld zonefile provider: flushing (#{@resource[:name]})"
@@ -275,7 +284,7 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
     # if it doesn't exist then it most likely isn't active(doesn't have any interfaces assigned to it) 
     # We shouldn't be doing a consistency check against zones that aren't in use.
     begin
-      iptables_zones_source = iptables('-L', 'INPUT_ZONES_SOURCE', '-n').split("\n")
+      iptables_zones_source = iptables('-L', 'INPUT_ZONES_SOURCE', '-n')
       iptables_zones_source.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
     rescue
       # If we have to rescue here then it's likely not something we should be dealing with local to this method
@@ -283,7 +292,7 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
       return true
     end
     begin
-      iptables_zones = iptables('-L', 'INPUT_ZONES', '-n').split("\n")
+      iptables_zones = iptables('-L', 'INPUT_ZONES', '-n')
       iptables_zones.delete_if { |val| ! val.start_with?("IN_#{@resource[:name]}") }
     rescue
       # If we have to rescue here then it's likely not something we should be dealing with local to this method
@@ -294,13 +303,13 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
     return true if iptables_zones_source.empty? and iptables_zones.empty?
 
     begin
-      iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n').split("\n")
+      iptables_allow = iptables('-L', "IN_#{@resource[:name]}_allow", '-n')
       iptables_allow.delete_if { |val| ! val.start_with?("ACCEPT") }
     rescue
     end
 
     begin
-      iptables_deny = iptables('-L', "IN_#{@resource[:name]}_deny", '-n').split("\n")
+      iptables_deny = iptables('-L', "IN_#{@resource[:name]}_deny", '-n')
       iptables_deny.delete_if { |val| ! val.start_with?("DROP", "REJECT") }
     rescue
     end
@@ -308,8 +317,7 @@ Puppet::Type.type(:firewalld_zonefile).provide :zoneprovider, :parent => Puppet:
     begin
       firewallcmd = firewall("--zone=#{@resource[:name]}", '--list-all').split("\n")
       services = firewallcmd.select { |val| /services:/ =~ val }.map do |val|
-        # HACK: dhcpv6-client is ipv6 only and we check ipv4 iptables only
-        val.sub('services:','').sub('dhcpv6-client','').split(" ").map{|service| read_service_ports(service)}
+        val.sub('services:','').split(" ").map{|service| read_service_ports(service)}
       end
 
       firewallcmd.select! { |val| /\srule family/ =~ val }
