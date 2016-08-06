@@ -409,7 +409,17 @@ Puppet::Type.newtype(:firewalld_zone) do
         file_opts[param] = self[param]
       end
     end
-      file_opts[:rich_rules] = self[:rich_rules] #unless self[:rich_rules].nil? or self[:rich_rules].empty?
+    file_opts[:rich_rules] = self[:rich_rules] #unless self[:rich_rules].nil? or self[:rich_rules].empty?
+
+    metaparams = Puppet::Type.metaparams
+    excluded_metaparams = [ :before, :notify, :require, :subscribe, :tag ]
+
+    metaparams.reject! { |param| excluded_metaparams.include? param }
+
+    metaparams.each do |metaparam|
+      file_opts[metaparam] = self[metaparam] if self[metaparam]
+    end
+
     [ Puppet::Type.type(:firewalld_zonefile).new(file_opts) ]
   end
 
