@@ -26,7 +26,7 @@ class firewalld {
   package { 'firewalld':
     ensure => present,  # install package
   }
-  if ($::operatingsystem == 'ubuntu' and $::operatingsystemmajrelease =~ /^15\.\d+$/) {
+  if ($::operatingsystem == 'ubuntu' and $::operatingsystemmajrelease =~ /^1[56]\.\d+$/) {
     service { 'ufw':
       ensure => stopped,
       enable => false,
